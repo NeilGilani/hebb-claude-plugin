@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 0.4.0" src="https://img.shields.io/badge/version-0.4.0-5b4bff?style=flat-square">
+  <img alt="Version 0.4.1" src="https://img.shields.io/badge/version-0.4.1-5b4bff?style=flat-square">
   <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-d97757?style=flat-square">
   <img alt="No dependencies" src="https://img.shields.io/badge/dependencies-none-0a1f33?style=flat-square">
   <img alt="License Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-0a1f33?style=flat-square">
@@ -178,8 +178,9 @@ server at `https://hebb-site.pages.dev/v1/mcp`), both of which send your key wit
 Nothing is sent anywhere else, and nothing is sold or used to train AI models. Memories are kept
 until you delete them or your account.
 
-**Your key.** Claude Code asks for it when you install the plugin and keeps it in your system's
-credential store. The plugin never reads keys, tokens or passwords from your computer.
+**Your key.** Claude Code asks for it when you install the plugin, keeps it in your system's
+credential store, and hands it to the plugin's hooks and memory tools when it runs them. The plugin
+never reads keys, tokens or passwords from your computer.
 
 Every lesson is announced in your session as it's learned, and you can see and delete everything
 in the [dashboard](https://hebb-site.pages.dev/dashboard.html). Deleting gives you a receipt. The
@@ -261,8 +262,6 @@ disconnect it everywhere.
 - Your key shows up in the dashboard as "Claude Code plugin". Revoke it there to disconnect.
 - The memory tools are the same ones Hebb gives Claude, ChatGPT and Gemini, so what Claude Code
   learns is there too.
-- Upgrading from version 0.3? It kept a key in `~/.hebb`. You can delete that folder; 0.4 asks for
-  a key instead.
 - If you set Hebb up earlier by pasting commands from the dashboard, remove that setup
   (`claude mcp remove hebb`, and the Hebb hooks in `~/.claude/settings.json`), or every hook runs
   twice.

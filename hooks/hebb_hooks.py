@@ -48,18 +48,16 @@ STATE = os.path.expanduser(os.environ.get("HEBB_HOOK_STATE") or (
 
 
 def read_key():
-    """The plugin's key first; outside the plugin, the environment and then a file.
+    """Where the key comes from.
 
-    In the Claude Code plugin the key is a `userConfig` value: Claude Code asks for it when the
-    plugin is enabled, keeps it in the system's credential store, and gives it to every hook as
-    CLAUDE_PLUGIN_OPTION_HEBB_KEY. The plugin's copy of this file reads nothing else.
-
-    Installed by hand, the file matters more than it looks. Hooks inherit Claude Code's environment,
-    which inherits whatever shell launched it -- so an env-only design quietly fails for anyone who
-    starts the app from Spotlight or the Dock rather than a terminal, and the symptom is a memory
-    layer that is installed and silent.
+    In the Claude Code plugin, Claude Code passes it as the argument after the action: it is the
+    plugin's `hebb_key` userConfig value, which Claude Code asks for when the plugin is enabled,
+    keeps in the system's credential store, and substitutes into the hook's `args`. The plugin's
+    copy of this file reads the key from nowhere else.
     """
-    k = os.environ.get("CLAUDE_PLUGIN_OPTION_HEBB_KEY", "").strip()
+    k = sys.argv[2].strip() if len(sys.argv) > 2 and sys.argv[1] != "install" else ""
+    if k.startswith("${"):          # the option was never set, so Claude Code left the placeholder
+        k = ""
     return k
 
 
