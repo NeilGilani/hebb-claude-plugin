@@ -1,7 +1,7 @@
 {
   "hooks": {
     "SessionStart": [
-      { "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/bin/hebb_session.py\"", "timeout": 15 } ] }
+      { "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/hebb_hooks.py\" session", "timeout": 15 } ] }
     ],
     "UserPromptSubmit": [
       { "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/hebb_hooks.py\" inject" } ] }

@@ -1,11 +1,20 @@
 {
   "name": "hebb",
   "displayName": "Hebb",
-  "version": "0.3.0",
-  "description": "Memory for Claude Code that learns from what actually happened: it fixes commands before they run, refuses the ones you banned, and remembers what you told it, across sessions, projects and teammates. One sign-in, no keys to paste.",
+  "version": "0.4.0",
+  "description": "Memory for Claude Code that learns from what actually happened: it catches commands your machine is known to fail on before they run, refuses the ones you banned, and remembers what you told it, across sessions, projects and teammates.",
   "author": { "name": "Hebb", "url": "https://hebb-site.pages.dev" },
   "homepage": "https://hebb-site.pages.dev",
   "repository": "https://github.com/hilothefunnydog123-coder/hebb-claude-plugin",
   "license": "Apache-2.0",
-  "keywords": ["memory", "hooks", "mcp", "team", "learning"]
+  "keywords": ["memory", "hooks", "mcp", "team", "learning"],
+  "userConfig": {
+    "hebb_key": {
+      "type": "string",
+      "title": "Hebb key",
+      "description": "Your Hebb key. Create one at https://hebb-site.pages.dev/dashboard.html under Connect to Claude Code. It starts with hebb_live_.",
+      "sensitive": true,
+      "required": true
+    }
+  }
 }

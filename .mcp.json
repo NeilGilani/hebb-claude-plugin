@@ -1,8 +1,9 @@
 {
   "mcpServers": {
     "hebb": {
-      "command": "python3",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp/run.py"]
+      "type": "http",
+      "url": "https://hebb-site.pages.dev/v1/mcp",
+      "headers": { "Authorization": "Bearer ${user_config.hebb_key}" }
     }
   }
 }

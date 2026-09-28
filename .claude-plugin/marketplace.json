@@ -1,14 +1,21 @@
 {
   "name": "hebb",
-  "owner": { "name": "Hebb", "url": "https://hebb-site.pages.dev" },
-  "metadata": { "description": "Hebb: memory for AI agents that learns from what actually happened." },
+  "owner": {
+    "name": "Hebb",
+    "url": "https://hebb-site.pages.dev"
+  },
+  "metadata": {
+    "description": "Hebb: memory for AI agents that learns from what actually happened."
+  },
   "plugins": [
     {
       "name": "hebb",
       "source": "./",
-      "description": "Claude Code learns your machine from its own failures, fixes commands before they run, refuses the ones you banned, and remembers what you told it. One sign-in.",
-      "version": "0.3.0",
-      "author": { "name": "Hebb" },
+      "description": "Claude Code learns your machine from its own failures, catches commands your machine is known to fail on, refuses the ones you banned, and remembers what you told it.",
+      "version": "0.4.0",
+      "author": {
+        "name": "Hebb"
+      },
       "category": "productivity"
     }
   ]

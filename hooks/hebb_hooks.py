@@ -2,8 +2,9 @@
 """Hebb hooks: Claude Code learns from what actually happened, without being told.
 
     hebb_hooks.py inject     # UserPromptSubmit   -- put what it knows in front of it
-    hebb_hooks.py failed     # PostToolUseFailure -- remember the command that broke
-    hebb_hooks.py succeeded  # PostToolUse        -- pair it with the fix, and store the lesson
+    hebb_hooks.py guard      # PreToolUse         -- refuse a banned command, catch a known mistake
+    hebb_hooks.py observe    # PostToolUse(Failure) -- remember what broke, pair it with the fix
+    hebb_hooks.py session    # SessionStart       -- in the plugin, say so if there is no key yet
 
 WHY THIS IS NOT A MEMORY STORE WITH EXTRA STEPS. Everything else in this space -- a vault, a
 CLAUDE.md, an MCP tool -- requires somebody to decide a fact is worth keeping and then write it
@@ -21,7 +22,10 @@ worse than no memory, because the junk is injected into every prompt afterwards.
 only stored when the failure and the fix are recognisably the same intent, the failure is recent,
 and neither command looks like it carries a secret. Everything else is dropped silently.
 
-Install: see `clients/hooks/README.md`. Standard library only.
+Install: see `clients/hooks/README.md`, or install the Claude Code plugin, whose copy of this file
+is made by `clients/claude-plugin/sync.sh`. That copy leaves out every block between the
+"standalone" markers below: inside the plugin the key comes only from Claude Code (see
+`read_key`), and the plugin never edits Claude Code's settings. Standard library only.
 """
 from __future__ import annotations
 
@@ -36,26 +40,27 @@ import urllib.parse
 import urllib.request
 
 BASE = os.environ.get("HEBB_BASE", "https://hebb-site.pages.dev/v1").rstrip("/")
-STATE = os.path.expanduser(os.environ.get("HEBB_HOOK_STATE", "~/.hebb/state"))
-KEY_FILE = os.path.expanduser("~/.hebb/key")
+# What the hooks keep between calls: recent failures to pair with a fix, and a one-minute cache of
+# the memories. In the plugin that is Claude Code's data folder for it, removed on uninstall.
+STATE = os.path.expanduser(os.environ.get("HEBB_HOOK_STATE") or (
+    os.path.join(os.environ["CLAUDE_PLUGIN_DATA"], "state") if os.environ.get("CLAUDE_PLUGIN_DATA")
+    else "~/.hebb/state"))
 
 
 def read_key():
-    """Env first, then a file.
+    """The plugin's key first; outside the plugin, the environment and then a file.
 
-    The file matters more than it looks. Hooks inherit Claude Code's environment, which inherits
-    whatever shell launched it -- so an env-only design quietly fails for anyone who starts the app
-    from Spotlight or the Dock rather than a terminal, and the symptom is a memory layer that is
-    installed and silent.
+    In the Claude Code plugin the key is a `userConfig` value: Claude Code asks for it when the
+    plugin is enabled, keeps it in the system's credential store, and gives it to every hook as
+    CLAUDE_PLUGIN_OPTION_HEBB_KEY. The plugin's copy of this file reads nothing else.
+
+    Installed by hand, the file matters more than it looks. Hooks inherit Claude Code's environment,
+    which inherits whatever shell launched it -- so an env-only design quietly fails for anyone who
+    starts the app from Spotlight or the Dock rather than a terminal, and the symptom is a memory
+    layer that is installed and silent.
     """
-    k = os.environ.get("HEBB_KEY", "").strip()
-    if k:
-        return k
-    try:
-        with open(KEY_FILE) as f:
-            return f.read().strip()
-    except Exception:
-        return ""
+    k = os.environ.get("CLAUDE_PLUGIN_OPTION_HEBB_KEY", "").strip()
+    return k
 
 
 KEY = read_key()
@@ -478,61 +483,29 @@ def observe(event):
     return succeeded(event)
 
 
-EVENTS = {"UserPromptSubmit": "inject", "PreToolUse": "guard",
-          "PostToolUse": "observe", "PostToolUseFailure": "observe"}
 
 
-def install(key=""):
-    """Wire the hooks into ~/.claude/settings.json, idempotently, keeping a backup.
+# ---------------------------------------------------------------------- session
 
-    Merges rather than overwrites, and matches on the script path so running it twice does not
-    produce two copies of every hook -- somebody re-running an installer is the normal case, not
-    the exception.
-    """
-    here = os.path.abspath(__file__)
-    if key:
-        os.makedirs(os.path.dirname(KEY_FILE), exist_ok=True)
-        with open(KEY_FILE, "w") as f:
-            f.write(key.strip() + "\n")
-        os.chmod(KEY_FILE, 0o600)
-        print(f"key saved to {KEY_FILE} (mode 600)")
-    elif not KEY:
-        print("No key. Pass one: hebb_hooks.py install hebb_live_...\n"
-              "Get a free one at https://hebb-site.pages.dev/dashboard")
-        return 2
+DASHBOARD = "https://hebb-site.pages.dev/dashboard.html"
 
-    path = os.path.expanduser("~/.claude/settings.json")
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    cfg = read_json(path, {})
-    if not isinstance(cfg, dict):
-        print(f"{path} is not a JSON object; not touching it.")
-        return 1
-    if os.path.exists(path):
-        backup = path + ".hebb-backup"
-        with open(path) as a, open(backup, "w") as b:
-            b.write(a.read())
-        print(f"backed up existing settings to {backup}")
 
-    hooks = cfg.setdefault("hooks", {})
-    added = 0
-    for event, action in EVENTS.items():
-        entries = hooks.setdefault(event, [])
-        cmd = f"python3 {here} {action}"
-        if any(cmd == h.get("command")
-               for e in entries if isinstance(e, dict)
-               for h in (e.get("hooks") or []) if isinstance(h, dict)):
-            continue
-        entry = {"hooks": [{"type": "command", "command": cmd}]}
-        if event != "UserPromptSubmit":
-            entry["matcher"] = "Bash"
-        entries.append(entry)
-        added += 1
-
-    with open(path, "w") as f:
-        json.dump(cfg, f, indent=2)
-    print(f"{'wired ' + str(added) + ' hook(s) into' if added else 'already installed in'} {path}")
-    print("Restart Claude Code. Then: ask it to run something that needs a tool you do not have.")
-    return 0
+def session(event):
+    """SessionStart, in the plugin. With no key every other hook is silent, which from the outside
+    looks exactly like a memory that works and has nothing to say. So say it, once per session."""
+    if KEY:
+        return 0
+    return out({
+        "systemMessage": ("Hebb is installed but has no key yet, so it can't learn or remember "
+                          f"anything. Create one at {DASHBOARD} (Connect to Claude Code), then add "
+                          "it to the Hebb plugin with /plugin."),
+        "hookSpecificOutput": {
+            "hookEventName": "SessionStart",
+            "additionalContext": ("Hebb (memory for Claude Code) is installed without a key, so it is "
+                                  "off. If the user asks about Hebb or memory, tell them to create a "
+                                  f"key at {DASHBOARD} and add it to the Hebb plugin with /plugin."),
+        },
+    })
 
 
 # ---------------------------------------------------------------------- refuse
@@ -555,21 +528,24 @@ NEVER = "never: "
 
 # ---------------------------------------------------------------------- fix
 #
-# THE ONE THING NO OTHER MEMORY LAYER CAN DO. A vault, a CLAUDE.md, an MCP tool and a skill all have
-# exactly one move: put text in front of the model and hope it complies. `PreToolUse` can return
-# `updatedInput`, so a learned fact can CORRECT THE COMMAND instead of advising about it. `python`
-# becomes `python3` on its way to the shell; the model never sees the swap, spends no tokens on it,
-# and cannot ignore it, because there is nothing in the context to ignore.
+# CAUGHT BEFORE IT RUNS. A vault, a CLAUDE.md, an MCP tool and a skill all have exactly one move: put
+# text in front of the model and hope it complies. `PreToolUse` can refuse, so a command the machine
+# is known to fail on never reaches the shell. `python app.py` on a machine that only has `python3`
+# is stopped, and the refusal hands the model the corrected command, which it runs next. No failed
+# command, no error output to read, and nothing for the model to ignore.
 #
-# It is also the most dangerous code in this repository, and the safety rules below are most of it.
-# Silently altering a command somebody asked for could run the wrong thing on their machine, so:
+# It does not edit the command on its way to the shell. A command that silently differs from the
+# one the model chose is exactly what a person reviewing a session cannot see, and the plugin
+# directory does not allow it. The model runs the corrected command itself, in the open.
+#
+# The rules below decide what counts as a known mistake, and they are strict, because a wrong
+# refusal stops somebody's work:
 #
 #   * only a PROGRAM NAME is ever substituted, never an argument, path, flag or filename;
 #   * only where a program name can legally appear -- the start of the command, or straight after a
 #     shell separator -- so text inside a quoted string is untouchable;
 #   * only towards a substitute that was OBSERVED WORKING on this machine, never a guess;
-#   * every rewrite is printed on screen, because a command different from the one that was asked
-#     for is the one thing here that could genuinely hurt somebody;
+#   * every catch is printed on screen;
 #   * and `HEBB_NO_REWRITE=1` turns the whole thing off.
 
 SUBSTITUTE = re.compile(r"use `([^`]+)`")
@@ -670,25 +646,30 @@ def guard(event):
                      ". Do not retry this another way -- tell the user it was blocked and why."),
             }})
 
-    # Refusal is settled before anything is corrected: a command the user has forbidden must not be
-    # quietly reshaped into a version that gets through.
+    # Refusal is settled before anything is corrected: a banned command is refused for its own
+    # reason, never offered back in a corrected form that would get through.
     if os.environ.get("HEBB_NO_REWRITE"):
         return 0
     new, done = fix(cmd, rules)
     if not done or new == cmd:
         return 0
-    return out({"hookSpecificOutput": {
-        "hookEventName": "PreToolUse",
-        "updatedInput": {**(event.get("tool_input") or {}), "command": new},
-        "systemMessage": "hebb fixed it: " + ", ".join(done),
-    }})
+    facts = "; ".join(f"`{a}` is not installed on this machine, `{b}` is"
+                      for a, b in (d.split(" -> ", 1) for d in done))
+    return out({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            # The corrected command is the last thing in the reason, so the model can run it as is.
+            "permissionDecisionReason": (f"Not run: {facts} (Hebb learned this here earlier). "
+                                         f"Run this instead: {new.strip()}"),
+        },
+        "systemMessage": "hebb caught it: " + ", ".join(done),
+    })
 
 
 def main():
     if len(sys.argv) < 2:
         return 0
-    if sys.argv[1] == "install":
-        return install(sys.argv[2] if len(sys.argv) > 2 else "")
     try:
         event = json.load(sys.stdin)
     except Exception:
@@ -712,6 +693,8 @@ def main():
             return observe(event)
         if action == "guard":
             return guard(event)
+        if action == "session":
+            return session(event)
     except Exception:
         # A hook must never take the session down. Silence is the right failure here: the person
         # is in the middle of something else.

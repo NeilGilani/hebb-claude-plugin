@@ -1,13 +1,14 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/banner-dark.png">
-    <img alt="Hebb: Claude Code that learns from its own mistakes. A plugin for Claude Code." src=".github/assets/banner-light.png" width="100%">
+    <source media="(prefers-color-scheme: dark)" srcset="https://hebb-site.pages.dev/assets/readme/banner-dark.png">
+    <img alt="Hebb: Claude Code that learns from its own mistakes. A plugin for Claude Code." src="https://hebb-site.pages.dev/assets/readme/banner-light.png" width="100%">
   </picture>
 </p>
 
 <p align="center">
   <a href="#install"><b>Install</b></a> &nbsp;·&nbsp;
   <a href="#how-it-works"><b>How it works</b></a> &nbsp;·&nbsp;
+  <a href="#examples"><b>Examples</b></a> &nbsp;·&nbsp;
   <a href="#for-teams"><b>Teams</b></a> &nbsp;·&nbsp;
   <a href="#what-leaves-your-computer"><b>Privacy</b></a> &nbsp;·&nbsp;
   <a href="#faq"><b>FAQ</b></a> &nbsp;·&nbsp;
@@ -15,7 +16,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 0.3.0" src="https://img.shields.io/badge/version-0.3.0-5b4bff?style=flat-square">
+  <img alt="Version 0.4.0" src="https://img.shields.io/badge/version-0.4.0-5b4bff?style=flat-square">
   <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-d97757?style=flat-square">
   <img alt="No dependencies" src="https://img.shields.io/badge/dependencies-none-0a1f33?style=flat-square">
   <img alt="License Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-0a1f33?style=flat-square">
@@ -28,12 +29,14 @@ Claude Code forgets your machine every session. It runs `python`, finds out you 
 for.
 
 **Hebb makes it learn.** When a command fails and something else works, Hebb keeps that as a
-lesson. Next time, it fixes the command before it runs. You never write anything down, and your
-whole team can share what it learns.
+lesson. Next time, the wrong command is stopped before it runs and Claude is handed the one that
+works. You never write anything down, and your whole team can share what it learns.
 
 ## Install
 
-In Claude Code, run these one at a time:
+1. **Make a key.** Sign in to the [Hebb dashboard](https://hebb-site.pages.dev/dashboard.html?connect=claude)
+   (the account is free), choose **Make my key**, and copy it.
+2. **Install the plugin.** In Claude Code, run these one at a time:
 
 ```
 /plugin marketplace add hilothefunnydog123-coder/hebb-claude-plugin
@@ -42,42 +45,81 @@ In Claude Code, run these one at a time:
 /plugin install hebb@hebb
 ```
 
-Restart Claude Code. A browser tab opens once and you sign in to Hebb with a free account. That's
-the whole setup. Run `/hebb:login` any time to sign in again.
-
-<details>
-<summary>From a terminal instead</summary>
-
-```bash
-claude plugin marketplace add hilothefunnydog123-coder/hebb-claude-plugin
-claude plugin install hebb@hebb
-```
-
-</details>
+3. **Paste the key** when Claude Code asks for it. Claude Code keeps it in your system's credential
+   store, not in a file. That's the whole setup.
 
 ## How it works
 
 ```mermaid
 flowchart LR
-    A["A command fails<br/>pnpm install"] --> B["Something else works<br/>npx pnpm install"]
+    A["A command fails<br/>python app.py"] --> B["Something else works<br/>python3 app.py"]
     B --> C["Hebb keeps the lesson<br/>and tells you"]
     C --> D["Next session<br/>fixed before it runs"]
 ```
 
 1. **It watches.** Hooks see every shell command Claude runs and whether it worked.
 2. **It learns.** A failure followed by a fix becomes one short lesson, announced in your session.
-3. **It fixes and reminds.** Before Claude acts, the lessons that matter are put in front of it,
-   and a command it knows is wrong is corrected before it runs.
+3. **It catches and reminds.** Before Claude acts, the lessons that matter are put in front of it.
+   A command that uses a program this machine is known not to have is stopped before it runs, and
+   Claude is handed the corrected command to run instead.
 
 ## What you get
 
 | Feature | In practice |
 |---|---|
 | **Learns from failures, by itself** | A command fails, a different one works, and Hebb keeps that pair. No notes to maintain. |
-| **Fixes commands before they run** | `python` becomes `python3` before execution: no failed attempt, no tokens spent on it. |
+| **Catches known mistakes before they run** | `python app.py` on a machine with only `python3` is stopped, and Claude runs `python3 app.py` instead: no failed command, no error to read. |
 | **Refuses what you banned** | "Never run `git push --force`" becomes a hard block, not a suggestion. |
 | **Remembers what you tell it** | Preferences and conventions carry across sessions, projects and machines, with how old each one is. |
 | **Works across your AI apps** | The same memory is in Claude, ChatGPT, Gemini and Cursor through [Hebb's connector](https://hebb-site.pages.dev/mcp.html). |
+
+## Examples
+
+Each of these works as soon as the plugin is installed with your key. The lines starting with
+`hebb` are what the plugin prints in your session.
+
+**1. It learns a fix by itself.** On a Mac with no `python`, Claude runs a script:
+
+```
+$ python app.py
+zsh: command not found: python
+hebb learned: missing: python -> `python` is not installed on neils-mac.
+
+$ python3 app.py        # works
+hebb learned: missing: python -> `python` is not installed on neils-mac -- use `python3` instead.
+```
+
+Next session, or next week, Claude writes `python manage.py test`. Hebb stops it before it runs
+and tells Claude why, with the command that works:
+
+```
+hebb caught it: python -> python3
+Not run: `python` is not installed on this machine, `python3` is (Hebb learned this here earlier).
+Run this instead: python3 manage.py test
+```
+
+Claude runs `python3 manage.py test`. The command that would have failed never ran.
+
+**2. You ban a command once.** Tell Claude:
+
+> Never run `terraform destroy`. We lost staging to it.
+
+Claude saves the ban. From then on, in any session, if Claude tries it the command is stopped
+before it runs and Claude tells you why:
+
+```
+Blocked by your saved rule 'never: terraform destroy': We lost staging to it.
+```
+
+In a team, the ban applies to everyone's Claude Code. Undo it by asking Claude to forget it.
+
+**3. It remembers what you tell it.** Say *"remember that we deploy with `make ship`, never by
+hand"*. In a new session a week later, ask *"how do we deploy this?"* and Claude answers from
+memory, saying how old the memory is, instead of guessing or asking you again.
+
+**4. Your team gets it too.** Say *"share the python lesson with my team"*. Every teammate's
+Claude Code now has it. If your team requires approval, it waits in the
+[dashboard](https://hebb-site.pages.dev/dashboard.html) until an owner or admin approves it.
 
 ## Results
 
@@ -93,7 +135,10 @@ on tasks the agent had never seen before:
 
 Agents that had never touched the machine, and learned only from lessons other agents had shared,
 made **75% fewer** failed commands. This is an early pilot on one model; a larger study is next,
-and results will vary with your setup.
+and results will vary with your setup. The pilot ran version 0.3, which swapped a known-bad program
+for the working one by itself. Version 0.4 stops the command and hands Claude the fix instead, as
+the Claude plugin directory requires, which can cost Claude one extra step. We are measuring it
+again.
 
 ## For teams
 
@@ -117,7 +162,7 @@ The hooks are the one part of Hebb that learns without being asked, so here is e
 send:
 
 - **Lessons, not logs.** When a command fails and a different one then works, the hooks save one
-  short lesson, such as "`pnpm` is not installed on *your computer's name*, use `npx pnpm`
+  short lesson, such as "`python` is not installed on *your computer's name*, use `python3`
   instead". A lesson can contain the two commands, cut to 160 characters each, and your computer's
   name.
 - **Never anything that looks like a secret.** A command that looks like it contains a password,
@@ -126,6 +171,16 @@ send:
   memories and match them against your prompt on your own computer. Your prompts and commands are
   not sent to Hebb for this, and neither is the check against banned commands.
 
+**Where it goes.** Everything the plugin sends goes to one place: Hebb's API at
+`https://hebb-site.pages.dev/v1`, over HTTPS. The API runs on Cloudflare, and your account and
+memories are stored in a Supabase database. That covers the hooks and the memory tools (Hebb's MCP
+server at `https://hebb-site.pages.dev/v1/mcp`), both of which send your key with each request.
+Nothing is sent anywhere else, and nothing is sold or used to train AI models. Memories are kept
+until you delete them or your account.
+
+**Your key.** Claude Code asks for it when you install the plugin and keeps it in your system's
+credential store. The plugin never reads keys, tokens or passwords from your computer.
+
 Every lesson is announced in your session as it's learned, and you can see and delete everything
 in the [dashboard](https://hebb-site.pages.dev/dashboard.html). Deleting gives you a receipt. The
 full [privacy policy](https://hebb-site.pages.dev/privacy.html) covers the rest, and every line of
@@ -133,23 +188,23 @@ code that runs on your computer is in this repository.
 
 ## Commands
 
-| Type this | It does |
-|---|---|
-| `/hebb:login` | Sign in, or sign in again |
-| `/hebb:login --switch` | Switch to another Hebb account |
-| `/hebb:login --device` | Sign in without a browser on this machine |
-| "Am I connected to Hebb?" | Claude checks for you |
-| "Log me out of Hebb" | Signs out on this machine. Revoke the key in the dashboard to cut it off everywhere. |
+There are no commands to learn. Ask Claude in your own words:
 
-You can also just ask Claude: *"remember that we deploy with `make ship`"*, *"never run
+| Say this | It does |
+|---|---|
+| "Am I connected to Hebb?" | Claude checks for you |
+| "What do you know about this project?" | Claude recalls what's saved |
+| "Forget the python lesson" | Deletes it, with a receipt |
+
+A few more to try: *"remember that we deploy with `make ship`"*, *"never run
 `terraform destroy`"*, or *"what do you know about this project?"*
 
 ## Settings
 
-| Environment variable | What it does |
+| Setting | What it does |
 |---|---|
-| `HEBB_NO_AUTO_LOGIN=1` | Don't open the browser at startup when signed out (it opens at most once a day anyway) |
-| `HEBB_NO_REWRITE=1` | Keep the memory, but stop correcting commands before they run |
+| Hebb key | Asked for when you install. To change it, open `/plugin`, pick hebb and update its settings, or uninstall and install again. |
+| `HEBB_NO_REWRITE=1` (environment variable) | Keep the memory, but stop catching commands before they run |
 
 ## FAQ
 
@@ -195,17 +250,22 @@ The free plan includes 50 memories, 500 saves and 10,000 lookups a month.
 <summary><b>How do I remove it?</b></summary>
 <br>
 
-`claude plugin uninstall hebb@hebb`. Delete `~/.hebb` to remove the key and local state from this
-computer, and revoke the key in the dashboard to disconnect it everywhere.
+Run `/plugin uninstall hebb@hebb` in Claude Code (or `claude plugin uninstall hebb@hebb` in a
+terminal). Claude Code removes the plugin and its local data. Revoke the key in the dashboard to
+disconnect it everywhere.
 </details>
 
 ## Good to know
 
 - Needs Python 3 (`python3` on your PATH). Standard library only, nothing else to install.
-- Your key lives in `~/.hebb/key`, readable only by you, and shows up in the dashboard as
-  "Connected: Claude Code on *your machine*".
-- If you set Hebb up earlier by pasting commands from the dashboard, remove that setup. The plugin
-  warns you if both are installed.
+- Your key shows up in the dashboard as "Claude Code plugin". Revoke it there to disconnect.
+- The memory tools are the same ones Hebb gives Claude, ChatGPT and Gemini, so what Claude Code
+  learns is there too.
+- Upgrading from version 0.3? It kept a key in `~/.hebb`. You can delete that folder; 0.4 asks for
+  a key instead.
+- If you set Hebb up earlier by pasting commands from the dashboard, remove that setup
+  (`claude mcp remove hebb`, and the Hebb hooks in `~/.claude/settings.json`), or every hook runs
+  twice.
 
 ## Support
 
