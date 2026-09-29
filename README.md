@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/hilothefunnydog123-coder/hebb-claude-plugin/assets/banner-dark.png">
-    <img alt="Hebb: Claude Code that learns from its own mistakes. A plugin for Claude Code." src="https://raw.githubusercontent.com/hilothefunnydog123-coder/hebb-claude-plugin/assets/banner-light.png" width="100%">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/NeilGilani/hebb-claude-plugin/assets/banner-dark.png">
+    <img alt="Hebb: Claude Code that learns from its own mistakes. A plugin for Claude Code." src="https://raw.githubusercontent.com/NeilGilani/hebb-claude-plugin/assets/banner-light.png" width="100%">
   </picture>
 </p>
 
@@ -25,7 +25,7 @@
 <br>
 
 <p align="center">
-  <img alt="Day 1: Claude Code runs python, which this Mac doesn't have, and Hebb learns the fix. Next week, in a new session, Hebb stops python before it runs and Claude runs python3 instead." src="https://raw.githubusercontent.com/hilothefunnydog123-coder/hebb-claude-plugin/assets/demo.gif" width="100%">
+  <img alt="Day 1: Claude Code runs python, which this Mac doesn't have, and Hebb learns the fix. Next week, in a new session, Hebb stops python before it runs and Claude runs python3 instead." src="https://raw.githubusercontent.com/NeilGilani/hebb-claude-plugin/assets/demo.gif" width="100%">
 </p>
 
 Claude Code forgets your machine every session. It runs `python`, finds out you only have
@@ -38,7 +38,7 @@ no account needed.
 In Claude Code, run these one at a time:
 
 ```
-/plugin marketplace add hilothefunnydog123-coder/hebb-claude-plugin
+/plugin marketplace add NeilGilani/hebb-claude-plugin
 ```
 ```
 /plugin install hebb@hebb
@@ -275,7 +275,7 @@ disconnect it everywhere.
 
 ## Support
 
-Questions and bugs: [open an issue](https://github.com/hilothefunnydog123-coder/hebb-claude-plugin/issues)
+Questions and bugs: [open an issue](https://github.com/NeilGilani/hebb-claude-plugin/issues)
 or email neilgilani@gmail.com. Security problems: see [SECURITY.md](SECURITY.md).
 
 ## License
