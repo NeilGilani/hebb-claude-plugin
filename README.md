@@ -1,8 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/NeilGilani/hebb-claude-plugin/assets/banner-dark.png">
-    <img alt="Hebb: Claude Code that learns from its own mistakes. A plugin for Claude Code." src="https://raw.githubusercontent.com/NeilGilani/hebb-claude-plugin/assets/banner-light.png" width="100%">
-  </picture>
+  <img alt="Day 1: Claude Code runs python, which this Mac doesn't have, and Hebb learns the fix. Next week, in a new session, Hebb stops python before it runs and Claude runs python3 instead." src="https://raw.githubusercontent.com/NeilGilani/hebb-claude-plugin/assets/demo.gif" width="100%">
 </p>
 
 <p align="center">
@@ -23,10 +20,6 @@
 </p>
 
 <br>
-
-<p align="center">
-  <img alt="Day 1: Claude Code runs python, which this Mac doesn't have, and Hebb learns the fix. Next week, in a new session, Hebb stops python before it runs and Claude runs python3 instead." src="https://raw.githubusercontent.com/NeilGilani/hebb-claude-plugin/assets/demo.gif" width="100%">
-</p>
 
 Claude Code forgets your machine every session. It runs `python`, finds out you only have
 `python3`, and does exactly the same thing tomorrow. **Hebb makes it learn:** a command that failed
