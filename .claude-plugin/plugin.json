@@ -1,7 +1,7 @@
 {
   "name": "hebb",
   "displayName": "Hebb",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Memory for Claude Code that learns from what actually happened: it catches commands your machine is known to fail on before they run, refuses the ones you banned, and remembers what you told it, across sessions, projects and teammates.",
   "author": { "name": "Hebb", "url": "https://hebb-site.pages.dev" },
   "homepage": "https://hebb-site.pages.dev",
@@ -11,10 +11,10 @@
   "userConfig": {
     "hebb_key": {
       "type": "string",
-      "title": "Hebb key",
-      "description": "Your Hebb key. Create one at https://hebb-site.pages.dev/dashboard.html under Connect to Claude Code. It starts with hebb_live_.",
+      "title": "Hebb key (optional)",
+      "description": "Optional. Leave it empty and Hebb keeps its memories on this machine only. Add a free key from https://hebb-site.pages.dev/dashboard.html (Connect to Claude Code) to share memories with your team and across computers. It starts with hebb_live_.",
       "sensitive": true,
-      "required": true
+      "required": false
     }
   }
 }

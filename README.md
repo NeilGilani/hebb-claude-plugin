@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 0.4.1" src="https://img.shields.io/badge/version-0.4.1-5b4bff?style=flat-square">
+  <img alt="Version 0.5.0" src="https://img.shields.io/badge/version-0.5.0-5b4bff?style=flat-square">
   <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-d97757?style=flat-square">
   <img alt="No dependencies" src="https://img.shields.io/badge/dependencies-none-0a1f33?style=flat-square">
   <img alt="License Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-0a1f33?style=flat-square">
@@ -24,19 +24,18 @@
 
 <br>
 
-Claude Code forgets your machine every session. It runs `python`, finds out you only have
-`python3`, and does exactly the same thing tomorrow. Every failed command is a wasted turn you pay
-for.
+<p align="center">
+  <img alt="Day 1: Claude Code runs python, which this Mac doesn't have, and Hebb learns the fix. Next week, in a new session, Hebb stops python before it runs and Claude runs python3 instead." src="https://raw.githubusercontent.com/hilothefunnydog123-coder/hebb-claude-plugin/assets/demo.gif" width="100%">
+</p>
 
-**Hebb makes it learn.** When a command fails and something else works, Hebb keeps that as a
-lesson. Next time, the wrong command is stopped before it runs and Claude is handed the one that
-works. You never write anything down, and your whole team can share what it learns.
+Claude Code forgets your machine every session. It runs `python`, finds out you only have
+`python3`, and does exactly the same thing tomorrow. **Hebb makes it learn:** a command that failed
+once is stopped before it runs again, and Claude is handed the one that works. No notes to write,
+no account needed.
 
 ## Install
 
-1. **Make a key.** Sign in to the [Hebb dashboard](https://hebb-site.pages.dev/dashboard.html?connect=claude)
-   (the account is free), choose **Make my key**, and copy it.
-2. **Install the plugin.** In Claude Code, run these one at a time:
+In Claude Code, run these one at a time:
 
 ```
 /plugin marketplace add hilothefunnydog123-coder/hebb-claude-plugin
@@ -45,8 +44,13 @@ works. You never write anything down, and your whole team can share what it lear
 /plugin install hebb@hebb
 ```
 
-3. **Paste the key** when Claude Code asks for it. Claude Code keeps it in your system's credential
-   store, not in a file. That's the whole setup.
+That's it. When Claude Code asks for a Hebb key, leave it empty: Hebb runs in **local mode** and
+everything it learns stays on your computer. Start a new session and it's on.
+
+**Want it on your team, or on more than one computer?** Get a free key from the
+[Hebb dashboard](https://hebb-site.pages.dev/dashboard.html?connect=claude) (**Make my key**) and add
+it to the plugin with `/plugin`. Claude Code keeps it in your system's credential store, not in a
+file.
 
 ## How it works
 
@@ -70,12 +74,12 @@ flowchart LR
 | **Learns from failures, by itself** | A command fails, a different one works, and Hebb keeps that pair. No notes to maintain. |
 | **Catches known mistakes before they run** | `python app.py` on a machine with only `python3` is stopped, and Claude runs `python3 app.py` instead: no failed command, no error to read. |
 | **Refuses what you banned** | "Never run `git push --force`" becomes a hard block, not a suggestion. |
-| **Remembers what you tell it** | Preferences and conventions carry across sessions, projects and machines, with how old each one is. |
-| **Works across your AI apps** | The same memory is in Claude, ChatGPT, Gemini and Cursor through [Hebb's connector](https://hebb-site.pages.dev/mcp.html). |
+| **Remembers what you tell it** | Preferences and conventions carry across sessions and projects (and machines, with a key), with how old each one is. |
+| **Works across your AI apps** | The same memory is in Claude, ChatGPT, Gemini and Cursor through [Hebb's connector](https://hebb-site.pages.dev/mcp.html), with a key. |
 
 ## Examples
 
-Each of these works as soon as the plugin is installed with your key. The lines starting with
+Each of these works as soon as the plugin is installed, with or without a key. The lines starting with
 `hebb` are what the plugin prints in your session.
 
 **1. It learns a fix by itself.** On a Mac with no `python`, Claude runs a script:
@@ -117,7 +121,7 @@ In a team, the ban applies to everyone's Claude Code. Undo it by asking Claude t
 hand"*. In a new session a week later, ask *"how do we deploy this?"* and Claude answers from
 memory, saying how old the memory is, instead of guessing or asking you again.
 
-**4. Your team gets it too.** Say *"share the python lesson with my team"*. Every teammate's
+**4. Your team gets it too** (needs a key). Say *"share the python lesson with my team"*. Every teammate's
 Claude Code now has it. If your team requires approval, it waits in the
 [dashboard](https://hebb-site.pages.dev/dashboard.html) until an owner or admin approves it.
 
@@ -158,8 +162,10 @@ code.
 
 ## What leaves your computer
 
-The hooks are the one part of Hebb that learns without being asked, so here is exactly what they
-send:
+**Without a key, nothing.** In local mode your memories are one file in Claude Code's data folder
+for the plugin, and it is removed when you uninstall. The rest of this section is about what the
+plugin sends once you add a key. The hooks are the one part of Hebb that learns without being asked,
+so here is exactly what they send:
 
 - **Lessons, not logs.** When a command fails and a different one then works, the hooks save one
   short lesson, such as "`python` is not installed on *your computer's name*, use `python3`
@@ -171,14 +177,14 @@ send:
   memories and match them against your prompt on your own computer. Your prompts and commands are
   not sent to Hebb for this, and neither is the check against banned commands.
 
-**Where it goes.** Everything the plugin sends goes to one place: Hebb's API at
+**Where it goes.** With a key, everything the plugin sends goes to one place: Hebb's API at
 `https://hebb-site.pages.dev/v1`, over HTTPS. The API runs on Cloudflare, and your account and
-memories are stored in a Supabase database. That covers the hooks and the memory tools (Hebb's MCP
-server at `https://hebb-site.pages.dev/v1/mcp`), both of which send your key with each request.
+memories are stored in a Supabase database. That covers the hooks and the memory tools (a small server in
+this plugin that passes their requests to `https://hebb-site.pages.dev/v1/mcp`), both of which send your key with each request.
 Nothing is sent anywhere else, and nothing is sold or used to train AI models. Memories are kept
 until you delete them or your account.
 
-**Your key.** Claude Code asks for it when you install the plugin, keeps it in your system's
+**Your key, if you add one.** Claude Code asks for it when you install the plugin, keeps it in your system's
 credential store, and hands it to the plugin's hooks and memory tools when it runs them. The plugin
 never reads keys, tokens or passwords from your computer.
 
@@ -204,7 +210,7 @@ A few more to try: *"remember that we deploy with `make ship`"*, *"never run
 
 | Setting | What it does |
 |---|---|
-| Hebb key | Asked for when you install. To change it, open `/plugin`, pick hebb and update its settings, or uninstall and install again. |
+| Hebb key (optional) | Leave it empty for local mode. To add or change it, open `/plugin`, pick hebb and update its settings. |
 | `HEBB_NO_REWRITE=1` (environment variable) | Keep the memory, but stop catching commands before they run |
 
 ## FAQ
@@ -244,7 +250,8 @@ relevant.
 <summary><b>Does it cost anything?</b></summary>
 <br>
 
-The free plan includes 50 memories, 500 saves and 10,000 lookups a month.
+Local mode is free, with no limits. With a key, the free plan includes 50 memories, 500 saves and
+10,000 lookups a month.
 </details>
 
 <details>
@@ -259,7 +266,7 @@ disconnect it everywhere.
 ## Good to know
 
 - Needs Python 3 (`python3` on your PATH). Standard library only, nothing else to install.
-- Your key shows up in the dashboard as "Claude Code plugin". Revoke it there to disconnect.
+- If you add a key, it shows up in the dashboard as "Claude Code plugin". Revoke it there to disconnect.
 - The memory tools are the same ones Hebb gives Claude, ChatGPT and Gemini, so what Claude Code
   learns is there too.
 - If you set Hebb up earlier by pasting commands from the dashboard, remove that setup

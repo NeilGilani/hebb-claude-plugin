@@ -4,7 +4,7 @@
     hebb_hooks.py inject     # UserPromptSubmit   -- put what it knows in front of it
     hebb_hooks.py guard      # PreToolUse         -- refuse a banned command, catch a known mistake
     hebb_hooks.py observe    # PostToolUse(Failure) -- remember what broke, pair it with the fix
-    hebb_hooks.py session    # SessionStart       -- in the plugin, say so if there is no key yet
+    hebb_hooks.py session    # SessionStart       -- in the plugin, say which mode it is in
 
 WHY THIS IS NOT A MEMORY STORE WITH EXTRA STEPS. Everything else in this space -- a vault, a
 CLAUDE.md, an MCP tool -- requires somebody to decide a fact is worth keeping and then write it
@@ -84,9 +84,10 @@ STOP = {"the", "and", "for", "what", "when", "where", "which", "how", "are", "wa
 
 def api(path, method="GET", body=None, timeout=6):
     """Short timeout on purpose: `inject` runs before every prompt, and a memory service having a
-    slow day must never be the reason somebody's prompt hangs."""
+    slow day must never be the reason somebody's prompt hangs. With no key, the same calls are
+    answered from a file on this machine (see `local_api`)."""
     if not KEY:
-        return 0, {}
+        return local_api(path, method, body)
     req = urllib.request.Request(
         BASE + path, method=method,
         data=json.dumps(body).encode() if body is not None else None,
@@ -97,6 +98,34 @@ def api(path, method="GET", body=None, timeout=6):
             return r.status, json.loads(r.read().decode() or "{}")
     except Exception:
         return 0, {}
+
+
+# ---------------------------------------------------------------------- local mode
+#
+# NO KEY, STILL USEFUL. Without a key the memories live in one JSON file on this machine, beside the
+# rest of the hooks' state (in the plugin: Claude Code's data folder for it, removed on uninstall).
+# The plugin's MCP server reads and writes the same file, so what Claude is told to remember and what
+# the hooks learn are one memory. Everything learned, caught and refused works the same; a key adds
+# what needs a second machine: sharing with a team, and memory that follows you to another computer.
+
+def local_api(path, method="GET", body=None):
+    p = state_path("memories.json")
+    rules = read_json(p, [])
+    if not isinstance(rules, list):
+        rules = []
+    if path == "/rules" and method == "GET":
+        return 200, {"rules": rules}
+    if path == "/rules" and method == "POST" and isinstance(body, dict) and body.get("slot"):
+        slot = str(body["slot"])[:180]
+        rules = [r for r in rules if r.get("slot") != slot]
+        rules.append({"slot": slot, "value": str(body.get("value", "")), "updated_at": time.time()})
+        write_json(p, rules)
+        return 200, {"ok": True}
+    if path.startswith("/rules/") and method == "DELETE":
+        slot = urllib.parse.unquote(path[len("/rules/"):])
+        write_json(p, [r for r in rules if r.get("slot") != slot])
+        return 200, {"ok": True}
+    return 0, {}
 
 
 def words(text):
@@ -145,6 +174,8 @@ def rules_cached():
     """All memories, cached briefly. Without the cache this is a network round trip on every
     keystroke-to-enter, which is the difference between a hook nobody notices and one people
     uninstall."""
+    if not KEY:
+        return local_api("/rules")[1]["rules"]    # a local file needs no cache
     p = state_path("rules.json")
     c = read_json(p, {})
     if c.get("at", 0) + CACHE_TTL_S > time.time():
@@ -489,20 +520,22 @@ DASHBOARD = "https://hebb-site.pages.dev/dashboard.html"
 
 
 def session(event):
-    """SessionStart, in the plugin. With no key every other hook is silent, which from the outside
-    looks exactly like a memory that works and has nothing to say. So say it, once per session."""
+    """SessionStart, in the plugin. Without a key Hebb runs in local mode, which from the outside
+    looks exactly like the full thing; say so once, the first session after install, so nobody
+    expects a teammate to see what it learned."""
     if KEY:
         return 0
+    flag = state_path("local_mode_announced")
+    if os.path.exists(flag):
+        return 0
+    try:
+        open(flag, "w").close()
+    except Exception:
+        pass
     return out({
-        "systemMessage": ("Hebb is installed but has no key yet, so it can't learn or remember "
-                          f"anything. Create one at {DASHBOARD} (Connect to Claude Code), then add "
-                          "it to the Hebb plugin with /plugin."),
-        "hookSpecificOutput": {
-            "hookEventName": "SessionStart",
-            "additionalContext": ("Hebb (memory for Claude Code) is installed without a key, so it is "
-                                  "off. If the user asks about Hebb or memory, tell them to create a "
-                                  f"key at {DASHBOARD} and add it to the Hebb plugin with /plugin."),
-        },
+        "systemMessage": ("Hebb is on, in local mode: what it learns stays on this machine. To share "
+                          f"memories with your team or across computers, get a free key at {DASHBOARD} "
+                          "and add it to the Hebb plugin with /plugin."),
     })
 
 

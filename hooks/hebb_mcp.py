@@ -1,0 +1,241 @@
+#!/usr/bin/env python3
+"""Hebb's MCP server, as the Claude Code plugin runs it.
+
+    hebb_mcp.py <plugin data folder> <key, or nothing>
+
+WITH A KEY it is a pipe to the Hebb service's own MCP endpoint: every message from Claude Code is
+posted there and every answer handed back, so the tools are the service's (remember, recall,
+list_memories, share, forget, never_run) and nothing here has to keep up with them.
+
+WITHOUT A KEY it answers the core tools itself from one file on this machine, the same file the
+hooks read and write, so the plugin works the moment it is installed, with no account. A key the
+service rejects falls back to the same local mode rather than leaving Claude with broken tools.
+
+JSON-RPC 2.0 over stdin/stdout, one message per line. Standard library only. stdout is the protocol
+channel: nothing else is ever printed to it.
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import sys
+import time
+import urllib.error
+import urllib.request
+
+URL = os.environ.get("HEBB_MCP_URL", "https://hebb-site.pages.dev/v1/mcp")
+VERSION = "0.5.0"
+DASHBOARD = "https://hebb-site.pages.dev/dashboard.html"
+
+
+def arg(i):
+    v = sys.argv[i].strip() if len(sys.argv) > i else ""
+    return "" if v.startswith("${") else v       # an unset option arrives as its placeholder
+
+
+KEY = arg(2)
+DATA = arg(1) or os.environ.get("CLAUDE_PLUGIN_DATA", "")
+STATE = os.path.expanduser(os.environ.get("HEBB_HOOK_STATE") or (
+    os.path.join(DATA, "state") if DATA else "~/.hebb/state"))
+STORE = os.path.join(STATE, "memories.json")
+
+# The hooks' rule, kept identical: anything that looks like a credential is never stored.
+SECRETISH = re.compile(
+    r"sk-[A-Za-z0-9_\-]{12,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{12,}|"
+    r"-----BEGIN [A-Z ]*PRIVATE KEY|Bearer\s+[A-Za-z0-9._\-]{16,}|"
+    r"(password|passwd|secret|api[_-]?key|token)\s*[=:]\s*\S{6,}", re.I)
+
+
+def send(msg):
+    sys.stdout.write(json.dumps(msg) + "\n")
+    sys.stdout.flush()
+
+
+# ---------------------------------------------------------------------- with a key
+
+def forward(line, mid):
+    """Post one message to the service and hand back whatever it answers. Returns False when the
+    key was refused, so the caller can answer from the local file instead."""
+    global KEY
+    req = urllib.request.Request(URL, data=line.encode(), method="POST", headers={
+        "Authorization": f"Bearer {KEY}", "content-type": "application/json",
+        "accept": "application/json, text/event-stream", "user-agent": f"hebb-plugin/{VERSION}"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            body = r.read().decode()
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            KEY = ""
+            return False
+        body, err = "", f"The Hebb service answered {e.code}."
+    except Exception:
+        body, err = "", "The Hebb service could not be reached."
+    else:
+        err = ""
+    if err:
+        if mid is not None:
+            send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32000, "message": err}})
+        return True
+    # Plain JSON, or server-sent events whose data lines are the messages.
+    chunks = [body] if body.lstrip().startswith(("{", "[")) else \
+        [l[5:].strip() for l in body.splitlines() if l.startswith("data:")]
+    for c in chunks:
+        try:
+            m = json.loads(c)
+        except Exception:
+            continue
+        for one in (m if isinstance(m, list) else [m]):
+            send(one)
+    return True
+
+
+# ---------------------------------------------------------------------- without a key
+
+def load():
+    try:
+        with open(STORE) as f:
+            rules = json.load(f)
+        return rules if isinstance(rules, list) else []
+    except Exception:
+        return []
+
+
+def save(rules):
+    os.makedirs(STATE, exist_ok=True)
+    tmp = STORE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(rules, f)
+    os.replace(tmp, STORE)
+
+
+def put(slot, value):
+    slot = slot.strip()[:180]
+    rules = [r for r in load() if r.get("slot") != slot]
+    rules.append({"slot": slot, "value": value.strip(), "updated_at": time.time()})
+    save(rules)
+
+
+def words(text):
+    return {w[:-1] if len(w) > 3 and w.endswith("s") else w
+            for w in re.split(r"[^a-z0-9.\-_/]+", (text or "").lower()) if len(w) > 2}
+
+
+def line(r):
+    return f"- {r.get('slot')}: {r.get('value')}"
+
+
+def text(t, error=False):
+    return {"content": [{"type": "text", "text": t}], **({"isError": True} if error else {})}
+
+
+def call(name, a):
+    if name == "remember":
+        slot, value = str(a.get("name", "")), str(a.get("value", ""))
+        if not slot.strip() or not value.strip():
+            return text("remember needs a name and a value.", True)
+        if SECRETISH.search(slot + " " + value):
+            return text("Not stored: it looks like a credential, and Hebb never stores those.", True)
+        put(slot, value)
+        return text(f"Remembered on this machine: {slot.strip()} -> {value.strip()}")
+    if name == "recall":
+        rules = load()
+        want = str(a.get("name", "")).strip()
+        hit = [r for r in rules if want and r.get("slot") == want]
+        if not hit:
+            q = words(want + " " + str(a.get("question", "")))
+            scored = sorted(((len(q & words(f"{r.get('slot')} {r.get('value')}")), r) for r in rules),
+                            key=lambda x: -x[0])
+            hit = [r for s, r in scored if s][:5]
+        return text("\n".join(line(r) for r in hit) if hit else "Nothing is stored for that.")
+    if name == "list_memories":
+        rules = load()
+        return text("\n".join(line(r) for r in rules) if rules else "No memories yet.")
+    if name == "forget":
+        slot = str(a.get("name", "")).strip()
+        rules = load()
+        keep = [r for r in rules if r.get("slot") != slot]
+        if len(keep) == len(rules):
+            return text(f"Nothing is stored under {slot!r}.")
+        save(keep)
+        return text(f"Forgot {slot!r}.")
+    if name == "never_run":
+        cmd, why = str(a.get("command", "")).strip(), str(a.get("reason", "")).strip()
+        if not cmd:
+            return text("never_run needs the command to block.", True)
+        put("never: " + cmd, why or "the user asked never to run this")
+        return text(f"Blocked on this machine: {cmd}")
+    return text(f"Unknown tool {name!r}.", True)
+
+
+def schema(props, required=()):
+    return {"type": "object", "properties": {k: {"type": v[0], "description": v[1]} for k, v in props.items()},
+            "required": list(required)}
+
+
+TOOLS = [
+    {"name": "remember", "description": "Save a fact, preference or decision the user states, so it is "
+     "known in every later session. Use a short stable name. Never store secrets.",
+     "inputSchema": schema({"name": ("string", "short stable name"), "value": ("string", "the fact")},
+                           ("name", "value"))},
+    {"name": "recall", "description": "Look up saved memories by exact name or by a question. Check here "
+     "before asking the user something they may have said before.",
+     "inputSchema": schema({"name": ("string", "exact name, if known"),
+                            "question": ("string", "what you want to know")})},
+    {"name": "list_memories", "description": "List everything saved.", "inputSchema": schema({})},
+    {"name": "forget", "description": "Delete a saved memory by name, when the user asks or it is wrong.",
+     "inputSchema": schema({"name": ("string", "exact name")}, ("name",))},
+    {"name": "never_run", "description": "Permanently refuse a shell command. Only when the user asks, "
+     "or right after a command caused damage and they confirm. Never infer this.",
+     "inputSchema": schema({"command": ("string", "the command text to block"),
+                            "reason": ("string", "why; shown when it is blocked")}, ("command", "reason"))},
+]
+
+INSTRUCTIONS = ("Hebb is the user's memory for Claude Code, in local mode: memories are kept on this "
+                "machine only. Recall before asking the user something they may have told you; "
+                "remember what they state without being asked. Never store secrets. To share memories "
+                f"with a team or across computers, the user can add a free key from {DASHBOARD}.")
+
+
+def local(msg):
+    mid, method, params = msg.get("id"), msg.get("method"), msg.get("params") or {}
+    if mid is None:
+        return                                   # a notification: nothing to answer
+    if method == "initialize":
+        result = {"protocolVersion": params.get("protocolVersion") or "2025-06-18",
+                  "capabilities": {"tools": {}}, "serverInfo": {"name": "hebb", "version": VERSION},
+                  "instructions": INSTRUCTIONS}
+    elif method == "ping":
+        result = {}
+    elif method == "tools/list":
+        result = {"tools": TOOLS}
+    elif method == "tools/call":
+        try:
+            result = call(params.get("name"), params.get("arguments") or {})
+        except Exception as e:
+            result = text(f"Hebb could not do that: {e}", True)
+    else:
+        return send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": f"No method {method}"}})
+    send({"jsonrpc": "2.0", "id": mid, "result": result})
+
+
+def main():
+    for raw in sys.stdin:
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            msg = json.loads(raw)
+        except Exception:
+            send({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}})
+            continue
+        if KEY and forward(raw, msg.get("id") if isinstance(msg, dict) else None):
+            continue
+        for m in (msg if isinstance(msg, list) else [msg]):
+            if isinstance(m, dict):
+                local(m)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
