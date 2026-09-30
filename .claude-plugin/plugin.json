@@ -1,7 +1,7 @@
 {
   "name": "hebb",
   "displayName": "Hebb",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Memory for Claude Code that learns from what actually happened: it catches commands your machine is known to fail on before they run, refuses the ones you banned, and remembers what you told it, across sessions, projects and teammates.",
   "author": { "name": "Hebb", "url": "https://hebb-site.pages.dev" },
   "homepage": "https://hebb-site.pages.dev",

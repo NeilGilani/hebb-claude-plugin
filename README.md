@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 0.5.0" src="https://img.shields.io/badge/version-0.5.0-5b4bff?style=flat-square">
+  <img alt="Version 0.5.1" src="https://img.shields.io/badge/version-0.5.1-5b4bff?style=flat-square">
   <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-d97757?style=flat-square">
   <img alt="No dependencies" src="https://img.shields.io/badge/dependencies-none-0a1f33?style=flat-square">
   <img alt="License Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-0a1f33?style=flat-square">
@@ -192,7 +192,8 @@ code that runs on your computer is in this repository.
 
 ## Commands
 
-There are no commands to learn. Ask Claude in your own words:
+Type **`/hebb:memory`** to see everything Hebb has learned on your machine, what you've banned,
+and what you've told it. Everything else, ask Claude in your own words:
 
 | Say this | It does |
 |---|---|
