@@ -1,6 +1,7 @@
 ---
 name: memory
-description: Show and manage what Hebb has learned. Use when the user asks what Hebb knows or remembers, asks you to remember, forget, or never run something, asks whether Hebb is working, or when Hebb blocked or corrected a command. The user can also run it as /hebb:memory to see everything Hebb has learned.
+description: Show and manage what Hebb has learned. Use when the user asks what Hebb knows or remembers, asks you to remember, forget, or never run something, asks whether Hebb is working, or when Hebb blocked or corrected a command. The user can also run it as /hebb:memory to see everything Hebb has learned, or type after it, like /hebb:memory remember we deploy with make ship.
+argument-hint: "[remember ... | forget ... | never run ... | a question]"
 ---
 
 # Hebb
@@ -11,7 +12,24 @@ that works. It also keeps what the user tells you to remember, and commands they
 tools come from the `hebb` MCP server: `list_memories`, `recall`, `remember`, `forget`, `never_run`,
 and `share` when the user has connected a key.
 
-## When the user runs /hebb:memory
+## When the user types something after /hebb:memory
+
+They typed: `$ARGUMENTS`
+
+If that is empty, skip to the next section. Otherwise do what it says, then confirm in one line:
+
+- **"remember ..."**, or any statement of a fact or preference ("we use pnpm", "tests run with
+  `make test`"): call `remember` with a short, stable name you choose and the fact as the value.
+- **"forget ..."**: call `list_memories`, find the entry that matches, and call `forget` with its
+  exact name. If more than one could match, list them and ask which.
+- **"never run ..."**, **"ban ..."** or **"block ..."**: this is an explicit request, so call
+  `never_run` with the exact command. If they gave no reason, ask for one in a few words; it is
+  shown whenever the command is blocked.
+- **A question** ("how do we deploy?", "what do you know about docker?"): call `recall` with it and
+  answer from what comes back. If nothing matches, say so.
+- **"share ..."**: call `share` if it exists; if not, see "Sharing with a team" below.
+
+## When the user runs /hebb:memory on its own
 
 1. Call `list_memories`.
 2. Show the result in three short groups, one line each:

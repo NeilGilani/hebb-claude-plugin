@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 0.5.1" src="https://img.shields.io/badge/version-0.5.1-5b4bff?style=flat-square">
+  <img alt="Version 0.5.2" src="https://img.shields.io/badge/version-0.5.2-5b4bff?style=flat-square">
   <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-d97757?style=flat-square">
   <img alt="No dependencies" src="https://img.shields.io/badge/dependencies-none-0a1f33?style=flat-square">
   <img alt="License Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-0a1f33?style=flat-square">
@@ -193,7 +193,16 @@ code that runs on your computer is in this repository.
 ## Commands
 
 Type **`/hebb:memory`** to see everything Hebb has learned on your machine, what you've banned,
-and what you've told it. Everything else, ask Claude in your own words:
+and what you've told it. Or tell it something straight away:
+
+```
+/hebb:memory remember we deploy with make ship
+/hebb:memory never run terraform destroy, it wiped staging
+/hebb:memory forget the python lesson
+/hebb:memory how do we run the tests?
+```
+
+Or just ask Claude in your own words:
 
 | Say this | It does |
 |---|---|
