@@ -9,6 +9,7 @@
   <a href="#for-teams"><b>Teams</b></a> &nbsp;·&nbsp;
   <a href="#what-leaves-your-computer"><b>Privacy</b></a> &nbsp;·&nbsp;
   <a href="#faq"><b>FAQ</b></a> &nbsp;·&nbsp;
+  <a href="memory/"><b>Memory inside the model</b></a> &nbsp;·&nbsp;
   <a href="https://hebb-site.pages.dev"><b>Website</b></a>
 </p>
 
@@ -259,6 +260,27 @@ A few more to try: *"remember that we deploy with `make ship`"*, *"never run
 |---|---|
 | Hebb key (optional) | Leave it empty for local mode. To add or change it, open `/plugin`, pick hebb and update its settings. |
 | `HEBB_NO_REWRITE=1` (environment variable) | Keep the memory, but stop catching commands before they run |
+
+## Memory inside the model: `hebb-memory`
+
+The plugin keeps memory beside the model. [`memory/`](memory/) is the research it comes from: a
+Python library that writes memory **into** a frozen open model, one page per fact. Delete any fact
+exactly, see which fact an answer came from, and keep each customer's facts where only that
+customer's questions can read them.
+
+```python
+import hebb_memory as hebb
+mem = hebb.attach("Qwen/Qwen2.5-0.5B")
+r = mem.remember("acme", "refund window", "60 days")
+mem.ask("acme", "refund window")
+mem.forget(r)
+```
+
+```bash
+pip install "hebb-memory @ git+https://github.com/NeilGilani/hebb-claude-plugin#subdirectory=memory"
+```
+
+[Read more](memory/README.md).
 
 ## FAQ
 

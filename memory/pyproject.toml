@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hebb-memory"
+version = "0.1.0"
+description = "Memory written into a frozen language model, one page per memory: exact deletion, exact attribution, scoped per subject."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Neil Gilani" }]
+keywords = ["memory", "llm", "continual learning", "machine unlearning", "multi-tenant", "transformers"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = ["torch>=2.2", "transformers>=4.44", "tokenizers>=0.19", "numpy>=1.24"]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[project.urls]
+Homepage = "https://hebb-site.pages.dev"
+Source = "https://github.com/NeilGilani/hebb-claude-plugin/tree/main/memory"
+
+[project.scripts]
+hebb-memory = "hebb_memory.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

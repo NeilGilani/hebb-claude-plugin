@@ -1,0 +1,21 @@
+# Publishes memory/ to PyPI as hebb-memory when a GitHub release tagged memory-v* is published.
+# One-time setup on pypi.org: Your projects -> Publishing -> add a pending publisher for this
+# repository, workflow memory-publish.yml, environment pypi. No token is stored anywhere.
+name: memory-publish
+on:
+  release:
+    types: [published]
+jobs:
+  publish:
+    if: startsWith(github.event.release.tag_name, 'memory-v')
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install build && python -m build memory --outdir dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
