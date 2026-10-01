@@ -16,16 +16,23 @@ channel: nothing else is ever printed to it.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
+import socket
 import sys
 import time
 import urllib.error
 import urllib.request
 
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
+
 URL = os.environ.get("HEBB_MCP_URL", "https://hebb-site.pages.dev/v1/mcp")
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 DASHBOARD = "https://hebb-site.pages.dev/dashboard.html"
 
 
@@ -47,6 +54,84 @@ SECRETISH = re.compile(
     r"(password|passwd|secret|api[_-]?key|token)\s*[=:]\s*\S{6,}", re.I)
 
 
+# ---------------------------------------------------------------------- history
+#
+# The same tamper-evident log the hooks write (hebb_hooks.py, `audit`): one line per event, each
+# carrying the SHA-256 of the one before. Keep the two `audit` functions identical.
+
+GENESIS = "0" * 64
+HISTORY = os.path.join(STATE, "history.log")
+
+
+def host():
+    try:
+        return socket.gethostname().split(".")[0]
+    except Exception:
+        return "this machine"
+
+
+def audit(event, slot="", detail=""):
+    try:
+        os.makedirs(STATE, exist_ok=True)
+        with open(HISTORY, "a+") as f:
+            if fcntl:
+                fcntl.flock(f, fcntl.LOCK_EX)
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(max(0, size - 8192))
+            tail = [l for l in f.read().splitlines() if l.strip()]
+            prev = json.loads(tail[-1])["hash"] if tail else GENESIS
+            e = {"t": round(time.time(), 3), "event": event, "slot": str(slot)[:200],
+                 "detail": str(detail)[:300], "host": host(), "prev": prev}
+            e["hash"] = hashlib.sha256(json.dumps(e, sort_keys=True).encode()).hexdigest()
+            f.write(json.dumps(e, sort_keys=True) + "\n")
+    except Exception:
+        pass
+
+
+def read_history():
+    """(entries, index of the first entry that breaks the chain or None)."""
+    try:
+        with open(HISTORY) as f:
+            lines = [l for l in f.read().splitlines() if l.strip()]
+    except FileNotFoundError:
+        return [], None
+    entries, prev, broken = [], GENESIS, None
+    for i, line in enumerate(lines):
+        try:
+            e = json.loads(line)
+            h = e.pop("hash")
+            ok = e.get("prev") == prev and hashlib.sha256(json.dumps(e, sort_keys=True).encode()).hexdigest() == h
+        except Exception:
+            e, h, ok = {"event": "unreadable", "slot": "", "detail": "", "t": 0}, "", False
+        if not ok and broken is None:
+            broken = i
+        entries.append(e)
+        prev = h
+    return entries, broken
+
+
+def history(limit=20):
+    entries, broken = read_history()
+    if not entries:
+        return text("No history yet. Hebb records here everything it learns, blocks, corrects or forgets.")
+    first = time.strftime("%Y-%m-%d", time.localtime(entries[0].get("t", 0)))
+    seal = (f"Record intact: {len(entries)} entries, each sealed to the one before, since {first}."
+            if broken is None else
+            f"Record BROKEN at entry {broken + 1} of {len(entries)}: an entry was edited, removed or "
+            "inserted there. Entries from that point on cannot be trusted.")
+    week = [e for e in entries if e.get("t", 0) > time.time() - 7 * 86400]
+    counts = {k: sum(e.get("event") == k for e in week) for k in ("blocked", "corrected", "learned")}
+    summary = (f"Last 7 days: {counts['blocked']} banned commands blocked, {counts['corrected']} known "
+               f"mistakes corrected before they ran, {counts['learned']} lessons learned.")
+    rows = []
+    for e in entries[-max(1, min(int(limit or 20), 200)):]:
+        when = time.strftime("%Y-%m-%d %H:%M", time.localtime(e.get("t", 0)))
+        rows.append(f"{when}  {e.get('event', '?'):<10} {e.get('slot', '')}"
+                    + (f"  ({e['detail']})" if e.get("detail") else ""))
+    return text("\n".join([seal, summary, ""] + rows))
+
+
 def send(msg):
     sys.stdout.write(json.dumps(msg) + "\n")
     sys.stdout.flush()
@@ -54,7 +139,7 @@ def send(msg):
 
 # ---------------------------------------------------------------------- with a key
 
-def forward(line, mid):
+def forward(line, mid, patch=None):
     """Post one message to the service and hand back whatever it answers. Returns False when the
     key was refused, so the caller can answer from the local file instead."""
     global KEY
@@ -86,8 +171,18 @@ def forward(line, mid):
         except Exception:
             continue
         for one in (m if isinstance(m, list) else [m]):
-            send(one)
+            send(patch(one) if patch else one)
     return True
+
+
+def with_history(msg):
+    tools = (msg.get("result") or {}).get("tools")
+    if isinstance(tools, list) and not any(t.get("name") == "history" for t in tools):
+        tools.append(HISTORY_TOOL)
+    return msg
+
+
+SYNCED = {"remember": "remembered", "forget": "forgot", "never_run": "banned", "share": "shared"}
 
 
 # ---------------------------------------------------------------------- without a key
@@ -137,6 +232,7 @@ def call(name, a):
         if SECRETISH.search(slot + " " + value):
             return text("Not stored: it looks like a credential, and Hebb never stores those.", True)
         put(slot, value)
+        audit("remembered", slot.strip(), value.strip())
         return text(f"Remembered on this machine: {slot.strip()} -> {value.strip()}")
     if name == "recall":
         rules = load()
@@ -158,13 +254,17 @@ def call(name, a):
         if len(keep) == len(rules):
             return text(f"Nothing is stored under {slot!r}.")
         save(keep)
+        audit("forgot", slot)
         return text(f"Forgot {slot!r}.")
     if name == "never_run":
         cmd, why = str(a.get("command", "")).strip(), str(a.get("reason", "")).strip()
         if not cmd:
             return text("never_run needs the command to block.", True)
         put("never: " + cmd, why or "the user asked never to run this")
+        audit("banned", "never: " + cmd, why)
         return text(f"Blocked on this machine: {cmd}")
+    if name == "history":
+        return history(a.get("limit", 20))
     return text(f"Unknown tool {name!r}.", True)
 
 
@@ -172,6 +272,12 @@ def schema(props, required=()):
     return {"type": "object", "properties": {k: {"type": v[0], "description": v[1]} for k, v in props.items()},
             "required": list(required)}
 
+
+HISTORY_TOOL = {
+    "name": "history", "description": "Show Hebb's tamper-evident history on this machine: what it "
+    "learned, blocked, corrected and forgot, with weekly counts, and whether the record is intact.",
+    "inputSchema": {"type": "object", "properties": {"limit": {"type": "integer",
+                    "description": "how many recent entries to show (default 20)"}}, "required": []}}
 
 TOOLS = [
     {"name": "remember", "description": "Save a fact, preference or decision the user states, so it is "
@@ -190,6 +296,8 @@ TOOLS = [
      "inputSchema": schema({"command": ("string", "the command text to block"),
                             "reason": ("string", "why; shown when it is blocked")}, ("command", "reason"))},
 ]
+
+TOOLS.append(HISTORY_TOOL)
 
 INSTRUCTIONS = ("Hebb is the user's memory for Claude Code, in local mode: memories are kept on this "
                 "machine only. Recall before asking the user something they may have told you; "
@@ -229,8 +337,15 @@ def main():
         except Exception:
             send({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}})
             continue
-        if KEY and forward(raw, msg.get("id") if isinstance(msg, dict) else None):
-            continue
+        one = msg if isinstance(msg, dict) else {}
+        name = (one.get("params") or {}).get("name") if one.get("method") == "tools/call" else None
+        if KEY and name != "history":
+            patch = with_history if one.get("method") == "tools/list" else None
+            if forward(raw, one.get("id"), patch):
+                if name in SYNCED:
+                    a = (one.get("params") or {}).get("arguments") or {}
+                    audit(SYNCED[name], str(a.get("name") or a.get("command") or ""), "sent to the Hebb service")
+                continue
         for m in (msg if isinstance(msg, list) else [msg]):
             if isinstance(m, dict):
                 local(m)

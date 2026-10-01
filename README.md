@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 0.5.2" src="https://img.shields.io/badge/version-0.5.2-5b4bff?style=flat-square">
+  <img alt="Version 0.6.0" src="https://img.shields.io/badge/version-0.6.0-5b4bff?style=flat-square">
   <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-d97757?style=flat-square">
   <img alt="No dependencies" src="https://img.shields.io/badge/dependencies-none-0a1f33?style=flat-square">
   <img alt="License Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-0a1f33?style=flat-square">
@@ -157,6 +157,22 @@ One person hits the problem and everybody's assistant learns it.
 Create a team in the [dashboard](https://hebb-site.pages.dev/dashboard.html) and share the invite
 code.
 
+## Guardrails you can check
+
+**Bans are hard to talk around.** A banned command is matched the way a shell reads it, not as
+text. `never: git push --force` also stops `git push -f`, `git push origin main --force`,
+`sudo git push --force`, `bash -c 'git push -f'`, `eval`, `$(...)`, a command assembled from
+variables, and the same command base64-encoded and piped into a shell. `-rf` counts as `-r -f`,
+and `--force-with-lease` is not mistaken for `--force`.
+
+**A history that shows tampering.** Every lesson learned, command blocked, mistake corrected and
+memory deleted goes into one log on your machine, and each entry is sealed with the SHA-256 of the
+one before it. `/hebb:memory history` shows the last entries, how many commands Hebb blocked and
+corrected this week, and whether the record is intact. Edit or delete any entry and it says exactly
+where the chain breaks. It is evidence, not a lock: someone who rewrites the whole file and every
+hash isn't stopped, but quietly changing one line is caught. Commands that look like they contain a
+secret are never written to it.
+
 ## What leaves your computer
 
 **Without a key, nothing.** In local mode your memories are one file in Claude Code's data folder
@@ -200,6 +216,7 @@ and what you've told it. Or tell it something straight away:
 /hebb:memory never run terraform destroy, it wiped staging
 /hebb:memory forget the python lesson
 /hebb:memory how do we run the tests?
+/hebb:memory history
 ```
 
 Or just ask Claude in your own words:

@@ -1,7 +1,7 @@
 ---
 name: memory
 description: Show and manage what Hebb has learned. Use when the user asks what Hebb knows or remembers, asks you to remember, forget, or never run something, asks whether Hebb is working, or when Hebb blocked or corrected a command. The user can also run it as /hebb:memory to see everything Hebb has learned, or type after it, like /hebb:memory remember we deploy with make ship.
-argument-hint: "[remember ... | forget ... | never run ... | a question]"
+argument-hint: "[remember ... | forget ... | never run ... | history | a question]"
 ---
 
 # Hebb
@@ -28,6 +28,10 @@ If that is empty, skip to the next section. Otherwise do what it says, then conf
 - **A question** ("how do we deploy?", "what do you know about docker?"): call `recall` with it and
   answer from what comes back. If nothing matches, say so.
 - **"share ..."**: call `share` if it exists; if not, see "Sharing with a team" below.
+- **"history"** (or "log", "audit", "what did you block"): call `history` and show its answer as
+  it comes: the line saying whether the record is intact first, then the weekly counts, then the
+  entries. If it says the record is broken, say so plainly and do not explain it away: someone or
+  something edited that file.
 
 ## When the user runs /hebb:memory on its own
 
@@ -38,7 +42,8 @@ If that is empty, skip to the next section. Otherwise do what it says, then conf
    - **Things you told me**: everything else
 3. If there is nothing yet, say so, and that Hebb learns by itself: the first time a command fails
    here and something else works, it keeps the fix.
-4. End with two or three things they can say, for example "remember that we deploy with
+4. Mention `/hebb:memory history` for everything Hebb has blocked, corrected and learned.
+5. End with two or three things they can say, for example "remember that we deploy with
    `make ship`", "never run `git push --force`", "forget the python lesson".
 
 ## When Hebb stops a command

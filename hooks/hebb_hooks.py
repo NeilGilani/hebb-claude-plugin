@@ -29,15 +29,23 @@ is made by `clients/claude-plugin/sync.sh`. That copy leaves out every block bet
 """
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import os
 import re
+import shlex
 import socket
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+
+try:                                   # file locking for the history log; absent on Windows
+    import fcntl
+except ImportError:
+    fcntl = None
 
 BASE = os.environ.get("HEBB_BASE", "https://hebb-site.pages.dev/v1").rstrip("/")
 # What the hooks keep between calls: recent failures to pair with a fix, and a one-minute cache of
@@ -161,6 +169,42 @@ def write_json(path, data):
         os.replace(tmp, path)
     except Exception:
         pass
+
+
+# ---------------------------------------------------------------------- history
+#
+# TAMPER-EVIDENT. Every lesson learned or unlearned and every command blocked or corrected is
+# appended to one log on this machine, and each entry carries the SHA-256 of the entry before it.
+# Editing or deleting any entry breaks the chain from that point on, which `/hebb:memory history`
+# reports. It is evidence, not a lock: someone who rewrites the whole file and recomputes every
+# hash is not stopped, only someone who quietly changes one line. The plugin's MCP server writes to
+# the same log with the same function, so the format here must not drift from hebb_mcp.py.
+
+GENESIS = "0" * 64
+
+
+def audit(event, slot="", detail=""):
+    try:
+        p = state_path("history.log")
+        with open(p, "a+") as f:
+            if fcntl:
+                fcntl.flock(f, fcntl.LOCK_EX)
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(max(0, size - 8192))
+            tail = [l for l in f.read().splitlines() if l.strip()]
+            prev = json.loads(tail[-1])["hash"] if tail else GENESIS
+            e = {"t": round(time.time(), 3), "event": event, "slot": str(slot)[:200],
+                 "detail": str(detail)[:300], "host": host(), "prev": prev}
+            e["hash"] = hashlib.sha256(json.dumps(e, sort_keys=True).encode()).hexdigest()
+            f.write(json.dumps(e, sort_keys=True) + "\n")
+    except Exception:
+        pass
+
+
+def safe_detail(cmd):
+    """A command as it may be written to the log: never one that looks like it carries a secret."""
+    return "[command withheld: it looked like it contained a secret]" if SECRETISH.search(cmd or "") else cmd
 
 
 def out(payload):
@@ -297,6 +341,7 @@ def remember(slot, value):
     s, _d = api("/rules", "POST", {"slot": slot[:180], "value": value})
     if s != 200:
         return 0
+    audit("learned", slot, value)
     # Said out loud. A memory written behind somebody's back is one they cannot correct, and the
     # first time they notice it they will assume there are others.
     return out({"systemMessage": f"hebb learned: {slot} -> {value}"})
@@ -304,6 +349,7 @@ def remember(slot, value):
 
 def forget(slot):
     api("/rules/" + urllib.parse.quote(slot), "DELETE")
+    audit("unlearned", slot)
     # The cache is dropped, not left to expire. Otherwise a fact we have just disproved keeps being
     # injected into every prompt for up to a minute -- which is the exact harm being fixed.
     try:
@@ -556,6 +602,143 @@ def session(event):
 
 NEVER = "never: "
 
+# HARD TO TALK AROUND. A ban written as text was only ever matched as text, so `git push -f`,
+# `bash -c "git push --force"`, `G=git; $G push --force` or the same command base64-encoded all
+# walked past `never: git push --force`. Each command is now also taken apart the way a shell would:
+# every simple command inside it, including those inside `sh -c`, `eval`, `$(...)`, backticks and
+# literal base64, with `sudo`, `env`, `nohup` and friends peeled off and variables set earlier in the
+# same line filled in. A ban matches a piece when the program is the same, the ban's words appear
+# in order, and every flag in the ban is present, short or long (`-f` is `--force`, `-rf` is both).
+# The plain text match still runs too, so nothing that was blocked before gets through now.
+
+WRAPPERS = {"sudo", "doas", "env", "command", "exec", "nohup", "time", "nice", "stdbuf", "timeout",
+            "xargs", "watch", "builtin"}
+SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "fish"}
+SAME_FLAG = {"f": "force", "r": "recursive", "R": "recursive"}
+ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+VAR = re.compile(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?")
+B64 = re.compile(r"^[A-Za-z0-9+/]{12,}={0,2}$")
+
+
+def shell_split(cmd):
+    """Simple commands in `cmd`, each a list of words, split on ; && || | & ( ) like a shell."""
+    try:
+        lx = shlex.shlex(cmd, posix=True, punctuation_chars=True)
+        lx.whitespace_split = True
+        words = list(lx)
+    except ValueError:
+        words = cmd.split()
+    pieces, cur = [], []
+    for w in words:
+        if w and set(w) <= set(";&|()<>"):
+            if cur:
+                pieces.append(cur)
+            cur = []
+        else:
+            cur.append(w)
+    if cur:
+        pieces.append(cur)
+    return pieces
+
+
+def unwrap(words):
+    """Drop leading VAR=value assignments and wrappers like sudo, env or nohup, with their flags."""
+    i = 0
+    while i < len(words):
+        w = words[i]
+        if ASSIGN.match(w):
+            i += 1
+            continue
+        if os.path.basename(w).lower() in WRAPPERS:
+            i += 1
+            while i < len(words) and (words[i].startswith("-") or re.match(r"^[0-9.]+[smhd]?$", words[i])):
+                i += 1 + (words[i] in ("-u", "-g"))
+            continue
+        break
+    return words[i:]
+
+
+def commands(cmd, depth=0, env=None):
+    """Every simple command `cmd` would run, as far as can be seen without running anything."""
+    env = {} if env is None else env
+    found = []
+    if depth > 4 or not cmd:
+        return found
+    for inner in re.findall(r"\$\(([^()]*)\)|`([^`]*)`", cmd):
+        for x in inner:
+            if x:
+                found += commands(x, depth + 1, env)
+    for words in shell_split(cmd):
+        if all(ASSIGN.match(w) for w in words):
+            for w in words:
+                k, _, v = w.partition("=")
+                env[k] = v
+            continue
+        words = [VAR.sub(lambda m: env.get(m.group(1), m.group(0)), w) for w in words]
+        if words and " " in words[0]:              # G="git push"; $G --force
+            words = words[0].split() + words[1:]
+        words = unwrap(words)
+        if not words:
+            continue
+        found.append(words)
+        prog = os.path.basename(words[0]).lower()
+        if prog in SHELLS and "-c" in words[1:]:
+            i = words.index("-c")
+            if i + 1 < len(words):
+                found += commands(words[i + 1], depth + 1, env)
+        elif prog == "eval":
+            found += commands(" ".join(words[1:]), depth + 1, env)
+        for w in words:
+            if B64.match(w):
+                try:
+                    decoded = base64.b64decode(w, validate=True).decode()
+                except Exception:
+                    continue
+                if decoded.isprintable():
+                    found += commands(decoded, depth + 1, env)
+    return found
+
+
+def flags_of(word):
+    if word.startswith("--"):
+        return {word[2:].split("=", 1)[0].lower()}
+    return {SAME_FLAG.get(c, "-" + c) for c in word[1:]}
+
+
+def split_ban(pattern):
+    words = unwrap(next(iter(shell_split(pattern)), []))
+    if not words:
+        return None
+    flags = set()
+    for w in words[1:]:
+        if w.startswith("-") and len(w) > 1:
+            flags |= flags_of(w)
+    return (os.path.basename(words[0]).lower(),
+            [w.lower() for w in words[1:] if not w.startswith("-")], flags)
+
+
+def ban_hits(ban, words):
+    prog, needed, flags = ban
+    if os.path.basename(words[0]).lower() != prog:
+        return False
+    rest = iter(w.lower() for w in words[1:] if not w.startswith("-"))
+    if not all(n in rest for n in needed):
+        return False
+    have = set()
+    for w in words[1:]:
+        if w.startswith("-") and len(w) > 1:
+            have |= flags_of(w)
+    return flags <= have
+
+
+def banned(pattern, cmd, low):
+    """Is the command, or anything it would run, what `never: <pattern>` forbids?"""
+    text = re.escape(" ".join(pattern.lower().split()))
+    if re.search(r"(?:^|(?<=[\s;&|(`'\"]))" + text + r"(?=$|[\s;&|)`'\"])", low):
+        return True                            # whole words only: --force must not catch --force-with-lease
+    ban = split_ban(pattern)
+    return bool(ban) and any(ban_hits(ban, words) for words in commands(cmd))
+
 
 # ---------------------------------------------------------------------- fix
 #
@@ -663,8 +846,9 @@ def guard(event):
         slot = str(r.get("slot", ""))
         if not slot.lower().startswith(NEVER):
             continue
-        pat = " ".join(slot[len(NEVER):].lower().split())
-        if pat and pat in low:
+        pat = slot[len(NEVER):].strip()
+        if pat and banned(pat, cmd, low):
+            audit("blocked", slot, safe_detail(cmd))
             return out({"hookSpecificOutput": {
                 "hookEventName": "PreToolUse",
                 "permissionDecision": "deny",
@@ -684,6 +868,7 @@ def guard(event):
     new, done = fix(cmd, rules)
     if not done or new == cmd:
         return 0
+    audit("corrected", ", ".join(done), safe_detail(cmd))
     facts = "; ".join(f"`{a}` is not installed on this machine, `{b}` is"
                       for a, b in (d.split(" -> ", 1) for d in done))
     return out({
