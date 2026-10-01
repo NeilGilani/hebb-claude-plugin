@@ -553,6 +553,13 @@ def observe(event):
     resp = event.get("tool_response")
     if not err and isinstance(resp, dict):
         err = resp.get("error") or (resp.get("stderr") if resp.get("is_error") else None)
+    if not err and isinstance(resp, str):
+        # Codex hands back a command's output as plain text, with no exit code and no separate
+        # failure event. Only output that names a missing program or module counts as a failure:
+        # guessing failure from ordinary output would teach lessons that are not true.
+        cmd = ((event.get("tool_input") or {}).get("command") or "")
+        if missing_dep(resp, cmd)[0]:
+            err = resp
     if err:
         return failed({**event, "tool_error": err})
     return succeeded(event)
@@ -578,6 +585,8 @@ def session(event):
         open(flag, "w").close()
     except Exception:
         pass
+    if os.environ.get("HEBB_CLIENT") == "codex":
+        return out({"systemMessage": "Hebb is on, in local mode: what it learns stays on this machine."})
     return out({
         "systemMessage": ("Hebb is on, in local mode: what it learns stays on this machine. To share "
                           f"memories with your team or across computers, get a free key at {DASHBOARD} "

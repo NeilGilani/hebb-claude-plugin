@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "hebb": {
+      "command": "python3",
+      "args": ["hooks/hebb_mcp.py", "~/.hebb"],
+      "cwd": "."
+    }
+  }
+}

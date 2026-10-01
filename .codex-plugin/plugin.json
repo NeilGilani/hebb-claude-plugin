@@ -1,0 +1,19 @@
+{
+  "name": "hebb",
+  "version": "0.7.0",
+  "description": "Memory for Codex that learns from what actually happened: it catches commands your machine is known to fail on before they run, refuses the ones you banned, and remembers what you told it, across sessions and projects.",
+  "keywords": ["memory", "hooks", "mcp", "learning", "guardrails"],
+  "skills": "./skills",
+  "hooks": "./hooks/codex-hooks.json",
+  "mcpServers": "./codex.mcp.json",
+  "interface": {
+    "displayName": "Hebb",
+    "shortDescription": "Codex that learns from its own mistakes",
+    "longDescription": "Hebb watches which shell commands fail and what works instead, stops the known-bad command before it runs next time and hands Codex the one that works, enforces commands you have banned, and keeps a tamper-evident history. Everything stays on your machine.",
+    "developerName": "Neil Gilani",
+    "category": "Productivity",
+    "websiteURL": "https://hebb-site.pages.dev",
+    "privacyPolicyURL": "https://hebb-site.pages.dev/privacy.html",
+    "brandColor": "#5B4BFF"
+  }
+}

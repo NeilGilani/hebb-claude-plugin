@@ -13,8 +13,9 @@
 </p>
 
 <p align="center">
-  <img alt="Version 0.6.0" src="https://img.shields.io/badge/version-0.6.0-5b4bff?style=flat-square">
+  <img alt="Version 0.7.0" src="https://img.shields.io/badge/version-0.7.0-5b4bff?style=flat-square">
   <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-d97757?style=flat-square">
+  <img alt="Codex plugin" src="https://img.shields.io/badge/Codex-plugin-1a1a1a?style=flat-square">
   <img alt="No dependencies" src="https://img.shields.io/badge/dependencies-none-0a1f33?style=flat-square">
   <img alt="License Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-0a1f33?style=flat-square">
 </p>
@@ -48,6 +49,24 @@ everything it learns stays on your computer. Start a new session and it's on.
 [Hebb dashboard](https://hebb-site.pages.dev/dashboard.html?connect=claude) (**Make my key**) and add
 it to the plugin with `/plugin`. Claude Code keeps it in your system's credential store, not in a
 file.
+
+### In Codex
+
+Hebb works in OpenAI's Codex too, the same way: it learns from failed commands, stops known-bad
+ones before they run, enforces your bans, and keeps the same tamper-evident history. In a
+terminal, run:
+
+```
+codex plugin marketplace add NeilGilani/hebb-claude-plugin
+```
+```
+codex plugin add hebb@hebb
+```
+
+Then start a new Codex session. If Codex asks you to review Hebb's hooks, approve them: they are
+what lets Hebb learn and stop commands. In Codex, Hebb runs in local mode, so everything it learns
+stays in `~/.hebb` on your computer; sharing with a team through a key is Claude Code only for now.
+To see what it knows, ask Codex *"what has Hebb learned?"*.
 
 ## How it works
 

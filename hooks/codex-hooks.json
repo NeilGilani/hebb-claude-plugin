@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {"hooks": [{"type": "command", "command": "HEBB_CLIENT=codex HEBB_HOOK_STATE=\"$HOME/.hebb/state\" python3 \"$PLUGIN_ROOT/hooks/hebb_hooks.py\" session", "timeout": 15}]}
+    ],
+    "UserPromptSubmit": [
+      {"hooks": [{"type": "command", "command": "HEBB_CLIENT=codex HEBB_HOOK_STATE=\"$HOME/.hebb/state\" python3 \"$PLUGIN_ROOT/hooks/hebb_hooks.py\" inject"}]}
+    ],
+    "PreToolUse": [
+      {"matcher": "Bash", "hooks": [{"type": "command", "command": "HEBB_CLIENT=codex HEBB_HOOK_STATE=\"$HOME/.hebb/state\" python3 \"$PLUGIN_ROOT/hooks/hebb_hooks.py\" guard"}]}
+    ],
+    "PostToolUse": [
+      {"matcher": "Bash", "hooks": [{"type": "command", "command": "HEBB_CLIENT=codex HEBB_HOOK_STATE=\"$HOME/.hebb/state\" python3 \"$PLUGIN_ROOT/hooks/hebb_hooks.py\" observe"}]}
+    ]
+  }
+}
