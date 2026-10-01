@@ -1,6 +1,6 @@
 {
   "name": "hebb",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Memory for Codex that learns from what actually happened: it catches commands your machine is known to fail on before they run, refuses the ones you banned, and remembers what you told it, across sessions and projects.",
   "keywords": ["memory", "hooks", "mcp", "learning", "guardrails"],
   "skills": "./skills",

@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 0.7.0" src="https://img.shields.io/badge/version-0.7.0-5b4bff?style=flat-square">
+  <img alt="Version 0.8.0" src="https://img.shields.io/badge/version-0.8.0-5b4bff?style=flat-square">
   <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-d97757?style=flat-square">
   <img alt="Codex plugin" src="https://img.shields.io/badge/Codex-plugin-1a1a1a?style=flat-square">
   <img alt="No dependencies" src="https://img.shields.io/badge/dependencies-none-0a1f33?style=flat-square">
@@ -64,9 +64,13 @@ codex plugin add hebb@hebb
 ```
 
 Then start a new Codex session. If Codex asks you to review Hebb's hooks, approve them: they are
-what lets Hebb learn and stop commands. In Codex, Hebb runs in local mode, so everything it learns
-stays in `~/.hebb` on your computer; sharing with a team through a key is Claude Code only for now.
-To see what it knows, ask Codex *"what has Hebb learned?"*.
+what lets Hebb learn and stop commands. To see what it knows, ask Codex *"what has Hebb learned?"*.
+
+**Claude Code and Codex share one memory.** Use both and they read the same memory on your
+computer, in `~/.hebb`: a fix Hebb learned in Claude Code is caught in Codex, and a command you
+banned in Codex is blocked in Claude Code. In Codex, Hebb runs in local mode; sharing with a team
+through a key is Claude Code only for now, and memories you keep in Hebb's cloud with a key are not
+yet visible to Codex.
 
 ## How it works
 
@@ -194,8 +198,8 @@ secret are never written to it.
 
 ## What leaves your computer
 
-**Without a key, nothing.** In local mode your memories are one file in Claude Code's data folder
-for the plugin, and it is removed when you uninstall. The rest of this section is about what the
+**Without a key, nothing.** In local mode your memories, and their history, live in one folder on
+your computer, `~/.hebb`, shared by Claude Code and Codex. Delete that folder to erase them. The rest of this section is about what the
 plugin sends once you add a key. The hooks are the one part of Hebb that learns without being asked,
 so here is exactly what they send:
 
@@ -302,7 +306,8 @@ Local mode is free, with no limits. With a key, the free plan includes 50 memori
 <br>
 
 Run `/plugin uninstall hebb@hebb` in Claude Code (or `claude plugin uninstall hebb@hebb` in a
-terminal). Claude Code removes the plugin and its local data. Revoke the key in the dashboard to
+terminal), or `codex plugin remove hebb@hebb` in Codex. Your local memories stay in `~/.hebb` so
+the other app keeps them; delete that folder to erase them. Revoke the key in the dashboard to
 disconnect it everywhere.
 </details>
 

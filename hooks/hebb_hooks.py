@@ -35,6 +35,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import socket
 import sys
 import time
@@ -48,11 +49,10 @@ except ImportError:
     fcntl = None
 
 BASE = os.environ.get("HEBB_BASE", "https://hebb-site.pages.dev/v1").rstrip("/")
-# What the hooks keep between calls: recent failures to pair with a fix, and a one-minute cache of
-# the memories. In the plugin that is Claude Code's data folder for it, removed on uninstall.
-STATE = os.path.expanduser(os.environ.get("HEBB_HOOK_STATE") or (
-    os.path.join(os.environ["CLAUDE_PLUGIN_DATA"], "state") if os.environ.get("CLAUDE_PLUGIN_DATA")
-    else "~/.hebb/state"))
+# What the hooks keep between calls: the local memories, the history, recent failures to pair with
+# a fix and a one-minute cache. ONE folder for every client, so Claude Code and Codex read and
+# write the same memory: a lesson learned in one is known in the other.
+STATE = os.path.expanduser(os.environ.get("HEBB_HOOK_STATE") or "~/.hebb/state")
 
 
 def read_key():
@@ -117,6 +117,13 @@ def api(path, method="GET", body=None, timeout=6):
 # what needs a second machine: sharing with a team, and memory that follows you to another computer.
 
 def local_api(path, method="GET", body=None):
+    if method == "GET":
+        return _local_api(path, method, body)
+    with memory_lock():
+        return _local_api(path, method, body)
+
+
+def _local_api(path, method="GET", body=None):
     p = state_path("memories.json")
     rules = read_json(p, [])
     if not isinstance(rules, list):
@@ -181,6 +188,51 @@ def write_json(path, data):
 # the same log with the same function, so the format here must not drift from hebb_mcp.py.
 
 GENESIS = "0" * 64
+
+
+class memory_lock:
+    """Claude Code and Codex can write the shared memory at the same moment; a read-modify-write
+    under this lock keeps one of them from silently undoing the other."""
+    def __enter__(self):
+        os.makedirs(STATE, exist_ok=True)
+        self.f = open(os.path.join(STATE, "memories.lock"), "a")
+        if fcntl:
+            fcntl.flock(self.f, fcntl.LOCK_EX)
+        return self
+
+    def __exit__(self, *exc):
+        self.f.close()
+
+
+def migrate(old_state):
+    """Before 0.8 the Claude Code plugin kept its memories in Claude Code's own data folder for it.
+    Bring them into the shared folder once, newest version of each memory winning, and keep the
+    old history beside the new one rather than splicing two chains together."""
+    try:
+        old = os.path.expanduser(old_state or "")
+        if not old or not os.path.isdir(old) or os.path.realpath(old) == os.path.realpath(STATE):
+            return
+        marker = os.path.join(old, "moved-to-shared")
+        if os.path.exists(marker):
+            return
+        with memory_lock():
+            have = read_json(os.path.join(STATE, "memories.json"), [])
+            by = {r.get("slot"): r for r in (have if isinstance(have, list) else []) if isinstance(r, dict)}
+            came = read_json(os.path.join(old, "memories.json"), [])
+            for r in came if isinstance(came, list) else []:
+                cur = by.get(r.get("slot")) if isinstance(r, dict) else None
+                if isinstance(r, dict) and (cur is None or float(r.get("updated_at") or 0) > float(cur.get("updated_at") or 0)):
+                    by[r.get("slot")] = r
+            write_json(os.path.join(STATE, "memories.json"), list(by.values()))
+        old_log = os.path.join(old, "history.log")
+        if os.path.exists(old_log):
+            new_log = os.path.join(STATE, "history.log")
+            shutil.copyfile(old_log, new_log if not os.path.exists(new_log)
+                            else os.path.join(STATE, "history-before-sharing.log"))
+        with open(marker, "w") as f:
+            f.write(STATE + "\n")
+    except Exception:
+        pass
 
 
 def audit(event, slot="", detail=""):
@@ -900,6 +952,8 @@ def main():
     except Exception:
         return 0
     action = sys.argv[1]
+    if os.environ.get("CLAUDE_PLUGIN_DATA") and not os.environ.get("HEBB_HOOK_STATE"):
+        migrate(os.path.join(os.environ["CLAUDE_PLUGIN_DATA"], "state"))
     if os.environ.get("HEBB_HOOK_DEBUG"):
         # Written, not printed: stdout is the hook's reply channel and stderr is shown to the user.
         try:

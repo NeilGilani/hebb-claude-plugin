@@ -20,6 +20,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import socket
 import sys
 import time
@@ -43,8 +44,9 @@ def arg(i):
 
 KEY = arg(2)
 DATA = arg(1) or os.environ.get("CLAUDE_PLUGIN_DATA", "")
-STATE = os.path.expanduser(os.environ.get("HEBB_HOOK_STATE") or (
-    os.path.join(DATA, "state") if DATA else "~/.hebb/state"))
+# One folder for every client, the same one the hooks use, so Claude Code and Codex share one memory.
+# DATA is only where Claude Code kept memories before 0.8, read once to move them over.
+STATE = os.path.expanduser(os.environ.get("HEBB_HOOK_STATE") or "~/.hebb/state")
 STORE = os.path.join(STATE, "memories.json")
 
 # The hooks' rule, kept identical: anything that looks like a credential is never stored.
@@ -187,6 +189,50 @@ SYNCED = {"remember": "remembered", "forget": "forgot", "never_run": "banned", "
 
 # ---------------------------------------------------------------------- without a key
 
+class memory_lock:
+    """Same lock file as the hooks: a read-modify-write here never undoes one made there."""
+    def __enter__(self):
+        os.makedirs(STATE, exist_ok=True)
+        self.f = open(os.path.join(STATE, "memories.lock"), "a")
+        if fcntl:
+            fcntl.flock(self.f, fcntl.LOCK_EX)
+        return self
+
+    def __exit__(self, *exc):
+        self.f.close()
+
+
+def migrate(old_state):
+    """Move pre-0.8 Claude Code memories into the shared folder once (same rules as the hooks)."""
+    try:
+        old = os.path.expanduser(old_state or "")
+        if not old or not os.path.isdir(old) or os.path.realpath(old) == os.path.realpath(STATE):
+            return
+        marker = os.path.join(old, "moved-to-shared")
+        if os.path.exists(marker):
+            return
+        with memory_lock():
+            by = {r.get("slot"): r for r in load() if isinstance(r, dict)}
+            try:
+                with open(os.path.join(old, "memories.json")) as f:
+                    came = json.load(f)
+            except Exception:
+                came = []
+            for r in came if isinstance(came, list) else []:
+                cur = by.get(r.get("slot")) if isinstance(r, dict) else None
+                if isinstance(r, dict) and (cur is None or float(r.get("updated_at") or 0) > float(cur.get("updated_at") or 0)):
+                    by[r.get("slot")] = r
+            save(list(by.values()))
+        old_log = os.path.join(old, "history.log")
+        if os.path.exists(old_log):
+            shutil.copyfile(old_log, HISTORY if not os.path.exists(HISTORY)
+                            else os.path.join(STATE, "history-before-sharing.log"))
+        with open(marker, "w") as f:
+            f.write(STATE + "\n")
+    except Exception:
+        pass
+
+
 def load():
     try:
         with open(STORE) as f:
@@ -206,9 +252,10 @@ def save(rules):
 
 def put(slot, value):
     slot = slot.strip()[:180]
-    rules = [r for r in load() if r.get("slot") != slot]
-    rules.append({"slot": slot, "value": value.strip(), "updated_at": time.time()})
-    save(rules)
+    with memory_lock():
+        rules = [r for r in load() if r.get("slot") != slot]
+        rules.append({"slot": slot, "value": value.strip(), "updated_at": time.time()})
+        save(rules)
 
 
 def words(text):
@@ -249,11 +296,12 @@ def call(name, a):
         return text("\n".join(line(r) for r in rules) if rules else "No memories yet.")
     if name == "forget":
         slot = str(a.get("name", "")).strip()
-        rules = load()
-        keep = [r for r in rules if r.get("slot") != slot]
-        if len(keep) == len(rules):
-            return text(f"Nothing is stored under {slot!r}.")
-        save(keep)
+        with memory_lock():
+            rules = load()
+            keep = [r for r in rules if r.get("slot") != slot]
+            if len(keep) == len(rules):
+                return text(f"Nothing is stored under {slot!r}.")
+            save(keep)
         audit("forgot", slot)
         return text(f"Forgot {slot!r}.")
     if name == "never_run":
@@ -328,6 +376,8 @@ def local(msg):
 
 
 def main():
+    if DATA and not os.environ.get("HEBB_HOOK_STATE"):
+        migrate(os.path.join(DATA, "state"))
     for raw in sys.stdin:
         raw = raw.strip()
         if not raw:
