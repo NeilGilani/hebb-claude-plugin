@@ -277,7 +277,7 @@ mem.forget(r)
 ```
 
 ```bash
-pip install "hebb-memory @ git+https://github.com/NeilGilani/hebb-claude-plugin#subdirectory=memory"
+pip install hebb-memory
 ```
 
 [Read more](memory/README.md).

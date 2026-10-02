@@ -33,10 +33,8 @@ fine-tune is the wrong shape for facts that belong to one customer and may have 
 ## Install
 
 ```bash
-pip install "hebb-memory @ git+https://github.com/NeilGilani/hebb-claude-plugin#subdirectory=memory"
+pip install hebb-memory
 ```
-
-(`pip install hebb-memory` once it is on PyPI.)
 
 Python 3.10+, PyTorch and Hugging Face `transformers`. It attaches to causal LMs whose decoder
 layers sit at `model.layers` (Qwen, Llama, Mistral, Gemma), `transformer.h` (GPT-2),
