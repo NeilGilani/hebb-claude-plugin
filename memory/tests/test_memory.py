@@ -27,7 +27,8 @@ def scores(mem, subject, attribute="refund window"):
     return mem.choose(subject, attribute, OPTIONS).scores
 
 
-def test_attach_refuses_without_a_trained_memory_and_says_how_to_get_one(tmp_path):
+def test_attach_refuses_without_a_trained_memory_and_says_how_to_get_one(tmp_path, monkeypatch):
+    monkeypatch.setenv("HEBB_MEMORY_OFFLINE", "1")
     lm, tok = toy_model(pretrain_steps=20)
     with pytest.raises(hebb.NoCheckpoint) as e:
         hebb.attach(lm, tok, model_id="toy", registry=hebb.Registry(tmp_path))
@@ -89,6 +90,18 @@ def test_reads_are_scoped_to_the_subject(registry):
     assert {int(i) for i in idx.flatten()} == {r.page for r in mem.records("acme")}
 
 
+def test_a_subject_with_nothing_learned_reads_nothing(registry):
+    bare = scores(fresh(registry), "acme")                # no memories at all: the model alone
+    mem = fresh(registry)
+    mem.remember("globex", "refund window", "14 days")
+    assert scores(mem, "acme") == bare                    # never globex's memory
+    mem.remember("acme", "refund window", "60 days")
+    mem.forget("acme")
+    assert scores(mem, "acme") == bare                    # nor after acme's is forgotten
+    assert mem.generate(question_for("acme", "refund window"), subject="acme") == \
+        fresh(registry).generate(question_for("acme", "refund window"), subject="acme")
+
+
 def test_trace_is_the_read_path(registry):
     mem = fresh(registry)
     for slot, value in (("refund window", "60 days"), ("support channel", "phone"),
@@ -144,3 +157,48 @@ def test_selfcheck_runs_the_mechanics_and_leaves_the_memory_empty(registry):
     rep = hebb.selfcheck(mem)
     assert rep["read_heads_active"] and rep["writes_changed_pages"] and rep["forget_ok"]
     assert len(mem) == 0 and not bool(mem.model.allocated.any())
+
+
+def publish(registry, folder, sha=None):
+    """Lay out a release folder the way the pretrain workflow does: the file and manifest.json."""
+    import hashlib, json, shutil
+    from hebb_memory.registry import checkpoint_name, fingerprint, product_config
+    fp = fingerprint(product_config())
+    name = checkpoint_name("toy", fp)
+    folder.mkdir()
+    shutil.copy(registry.root / registry.entries()[0]["file"], folder / name)
+    data = (folder / name).read_bytes()
+    (folder / "manifest.json").write_text(json.dumps({"files": {name: {
+        "model": "toy", "fingerprint": fp, "bytes": len(data), "loss": 1.0, "recipe": {},
+        "created": "2026-10-02T00:00:00Z", "sha256": sha or hashlib.sha256(data).hexdigest()}}}))
+    return folder.as_uri()
+
+
+def test_attach_downloads_the_published_memory_once(registry, tmp_path, monkeypatch):
+    import hebb_memory.registry as reg
+    monkeypatch.setattr(reg, "PRETRAINED", publish(registry, tmp_path / "release"))
+    local = hebb.Registry(tmp_path / "cache")
+    lm, tok = toy_model(pretrain_steps=20)
+    mem = hebb.attach(lm, tok, model_id="toy", registry=local)
+    assert len(local.entries()) == 1 and not mem.model.read_heads_are_inert()
+    monkeypatch.setattr(reg, "PRETRAINED", (tmp_path / "gone").as_uri())   # no network needed now
+    hebb.attach(lm, tok, model_id="toy", registry=local)
+
+
+def test_a_download_that_does_not_match_its_checksum_is_discarded(registry, tmp_path, monkeypatch):
+    import hebb_memory.registry as reg
+    monkeypatch.setattr(reg, "PRETRAINED", publish(registry, tmp_path / "release", sha="0" * 64))
+    local = hebb.Registry(tmp_path / "cache")
+    lm, tok = toy_model(pretrain_steps=20)
+    with pytest.raises(hebb.CheckpointMismatch):
+        hebb.attach(lm, tok, model_id="toy", registry=local)
+    assert local.entries() == [] and not any(local.root.glob("*.pt"))
+
+
+def test_offline_never_downloads(registry, tmp_path, monkeypatch):
+    import hebb_memory.registry as reg
+    monkeypatch.setattr(reg, "PRETRAINED", publish(registry, tmp_path / "release"))
+    monkeypatch.setenv("HEBB_MEMORY_OFFLINE", "1")
+    lm, tok = toy_model(pretrain_steps=20)
+    with pytest.raises(hebb.NoCheckpoint):
+        hebb.attach(lm, tok, model_id="toy", registry=hebb.Registry(tmp_path / "cache"))

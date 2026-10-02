@@ -137,7 +137,7 @@ class Memory:
         None reads every page."""
         m = self.model
         m.eval()
-        mem, _ = m._mem_for([prompt], restrict=self._restrict(subject))
+        mem = self._read([prompt], subject)
         ids = m.tok(prompt, add_special_tokens=False).input_ids[-m.cfg.max_len:]
         ids = torch.tensor([ids], device=m.device)
         out: List[int] = []
@@ -160,7 +160,7 @@ class Memory:
         m.eval()
         q = question_for(subject, attribute)
         ids, mask, labels = m.encode_pairs([(q, f" {o}") for o in options])
-        mem, _ = m._mem_for([q], restrict=self._restrict(subject))
+        mem = self._read([q], subject)
         if mem is not None:
             mem = mem.expand(len(options), -1, -1)
         scores = m._seq_logprob(m._forward(ids, mask, mem).logits, labels).tolist()
@@ -232,6 +232,17 @@ class Memory:
     def _find(self, subject: str, attribute: str) -> List[Record]:
         return [r for r in self._records.values() if r.subject == subject and r.attribute == attribute]
 
+    def _read(self, prompts: List[str], subject: Optional[str]) -> Optional[torch.Tensor]:
+        """Memory for these prompts, from `subject`'s memories only (None: from all of them).
+
+        A subject that has learned nothing reads nothing. It must not fall through to "no
+        restriction", which would hand it every other subject's memories."""
+        pages = self._restrict(subject)
+        if subject is not None and pages is None:
+            return None
+        mem, _ = self.model._mem_for(prompts, restrict=pages)
+        return mem
+
     def _restrict(self, subject: Optional[str]) -> Optional[torch.Tensor]:
         if subject is None:
             pages = sorted(self._records)
@@ -268,7 +279,7 @@ class Memory:
     def load(self, path: Union[str, Path]) -> List[Record]:
         """Add the memories saved in `path`. A memory for a subject and attribute that already
         exists here replaces it, as `remember` would."""
-        payload = torch.load(path, map_location="cpu", weights_only=False)
+        payload = torch.load(path, map_location="cpu", weights_only=True)
         if payload.get("format") != FORMAT:
             raise CheckpointMismatch(f"{path} is not a saved hebb-memory file")
         for k in ("model", "fingerprint"):
@@ -310,12 +321,15 @@ def _load_model(model_id: str, device: str):
 
 def attach(model, tokenizer=None, *, model_id: Optional[str] = None,
            checkpoint: Optional[Union[str, Path]] = None, registry: Optional[Registry] = None,
-           device: Optional[str] = None, n_pages: int = 256, **cfg_overrides) -> Memory:
+           device: Optional[str] = None, n_pages: int = 256, download: bool = True,
+           **cfg_overrides) -> Memory:
     """A frozen model with a trained memory on it.
 
     `model` is a Hugging Face model id, or an already-loaded causal LM (then pass `tokenizer`).
     The trained memory comes from `checkpoint` (a file, or "hf:owner/repo" on the Hugging Face
-    Hub), else from the local registry that `hebb-memory train` fills. Nothing here trains.
+    Hub), else from the local registry that `hebb-memory train` fills, else it is downloaded
+    once from the published memories (`download=False` or HEBB_MEMORY_OFFLINE=1 turns that off).
+    Nothing here trains.
     """
     if isinstance(model, str):
         model_id = model
@@ -330,7 +344,7 @@ def attach(model, tokenizer=None, *, model_id: Optional[str] = None,
         device = device or str(next(lm.parameters()).device)
     cfg = product_config(n_pages=n_pages, **cfg_overrides)
     fp = fingerprint(cfg)
-    path = resolve(checkpoint, model_id, fp, registry or Registry())
+    path = resolve(checkpoint, model_id, fp, registry or Registry(), fetch=download)
     state, payload = read_state(path, model_id, fp)
     m = MemoryLM(lm, tok, cfg).to(device)
     m.load_checkpoint(state)

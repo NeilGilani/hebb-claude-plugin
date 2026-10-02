@@ -1,8 +1,8 @@
 """Where trained memories live, and how one is matched to a model.
 
 A memory's read heads and key head are trained once per (base model, configuration). The
-result is a few megabytes, kept in a registry folder with a JSON index, and found again by the
-model id and a fingerprint of every configuration field that fixes a parameter shape.
+result, about 175 MB for Qwen2.5-0.5B, is kept in a registry folder with a JSON index and found
+by the model id and a fingerprint of every configuration field that fixes a parameter shape.
 """
 from __future__ import annotations
 
@@ -10,7 +10,10 @@ import hashlib
 import json
 import os
 import re
+import sys
 import time
+import urllib.error
+import urllib.request
 from dataclasses import asdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -34,6 +37,12 @@ RECIPE = dict(key_steps=1500, key_slots="shared", freeze_keys=True, meta_episode
 SHAPE_FIELDS = ("page_size", "slot_dim", "key_dim", "heads", "read_every", "cue_kind")
 
 HOME = Path(os.environ.get("HEBB_MEMORY_HOME") or Path.home() / ".cache" / "hebb-memory")
+
+#: Where trained memories are published: a GitHub release holding one file per (model,
+#: configuration) and a manifest.json with each file's sha256. `attach` downloads from here when
+#: the registry has nothing for the model. HEBB_MEMORY_OFFLINE=1 turns that off.
+PRETRAINED = os.environ.get("HEBB_MEMORY_PRETRAINED",
+                            "https://github.com/NeilGilani/hebb-memory/releases/download/pretrained")
 
 
 class NoCheckpoint(RuntimeError):
@@ -93,14 +102,82 @@ class Registry:
         entries = [e for e in self.entries() if not (e["model"] == model_id and e["fingerprint"] == fp)]
         entries.append({"model": model_id, "fingerprint": fp, "file": fname, "loss": float(loss),
                         "created": payload["created"], "recipe": dict(recipe)})
+        self._write_index(entries)
+        return path
+
+    def add(self, model_id: str, fp: str, fname: str, *, loss: float, recipe: Dict,
+            created: str) -> Path:
+        """Index a checkpoint file already sitting in the registry folder (a download)."""
+        entries = [e for e in self.entries() if not (e["model"] == model_id and e["fingerprint"] == fp)]
+        entries.append({"model": model_id, "fingerprint": fp, "file": fname, "loss": float(loss),
+                        "created": created, "recipe": dict(recipe)})
+        self._write_index(entries)
+        return self.root / fname
+
+    def _write_index(self, entries: List[Dict]) -> None:
         tmp = self.index_path.with_suffix(".tmp")
         tmp.write_text(json.dumps({"entries": entries}, indent=1, default=str))
         os.replace(tmp, self.index_path)
-        return path
 
 
-def resolve(checkpoint: Optional[str | Path], model_id: str, fp: str, registry: Registry) -> Path:
-    """A local path for the trained memory: an explicit file, a Hugging Face repo, or the registry.
+def checkpoint_name(model_id: str, fp: str) -> str:
+    return f"{_safe(model_id)}-{fp}.pt"
+
+
+def _get(url: str, timeout: float = 30.0):
+    return urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "hebb-memory"}),
+                                  timeout=timeout)
+
+
+def manifest(base: Optional[str] = None) -> Dict:
+    """The published memories, {file name: {model, fingerprint, sha256, bytes, ...}}. Empty when
+    nothing is published or the network is unreachable."""
+    base = base or PRETRAINED
+    try:
+        with _get(f"{base}/manifest.json") as r:
+            return json.loads(r.read().decode()).get("files", {})
+    except (urllib.error.URLError, OSError, ValueError):
+        return {}
+
+
+def download(model_id: str, fp: str, registry: Registry, base: Optional[str] = None) -> Optional[Path]:
+    """Fetch the published memory for this model into the registry, or None if there is none.
+
+    The file's sha256 must match the manifest before it is indexed, so a truncated or altered
+    download is discarded rather than loaded."""
+    base = base or PRETRAINED
+    name = checkpoint_name(model_id, fp)
+    entry = manifest(base).get(name)
+    if not entry or entry.get("model") != model_id or entry.get("fingerprint") != fp:
+        return None
+    registry.root.mkdir(parents=True, exist_ok=True)
+    part = registry.root / (name + ".part")
+    digest, done = hashlib.sha256(), 0
+    total = int(entry.get("bytes") or 0)
+    print(f"hebb-memory: downloading the trained memory for {model_id} "
+          f"({total / 1e6:.0f} MB, once)", file=sys.stderr, flush=True)
+    with _get(f"{base}/{name}", timeout=60.0) as r, open(part, "wb") as f:
+        while chunk := r.read(1 << 20):
+            f.write(chunk)
+            digest.update(chunk)
+            done += len(chunk)
+            if total and sys.stderr.isatty():
+                print(f"\r  {100 * done / total:5.1f}%", end="", file=sys.stderr, flush=True)
+    if total and sys.stderr.isatty():
+        print(file=sys.stderr)
+    if digest.hexdigest() != entry["sha256"]:
+        part.unlink(missing_ok=True)
+        raise CheckpointMismatch(f"the downloaded memory for {model_id} does not match its published "
+                                 f"checksum; nothing was saved. Try again.")
+    os.replace(part, registry.root / name)
+    return registry.add(model_id, fp, name, loss=entry.get("loss", float("nan")),
+                        recipe=entry.get("recipe", {}), created=entry.get("created", ""))
+
+
+def resolve(checkpoint: Optional[str | Path], model_id: str, fp: str, registry: Registry,
+            fetch: bool = True) -> Path:
+    """A local path for the trained memory: an explicit file, a Hugging Face repo, the registry,
+    or, failing those, the published memory for this model, downloaded once into the registry.
 
     `checkpoint="hf:owner/repo"` downloads `memory.pt` from that model repo on the Hub.
     """
@@ -115,17 +192,19 @@ def resolve(checkpoint: Optional[str | Path], model_id: str, fp: str, registry: 
             raise NoCheckpoint(f"checkpoint {path} does not exist")
         return path
     path = registry.find(model_id, fp)
+    if path is None and fetch and not os.environ.get("HEBB_MEMORY_OFFLINE"):
+        path = download(model_id, fp, registry)
     if path is None:
         raise NoCheckpoint(
-            f"no trained memory for {model_id!r} (configuration {fp}) in {registry.root}.\n"
-            f"Train one, once per base model:\n"
+            f"no trained memory for {model_id!r} (configuration {fp}) in {registry.root}, and none "
+            f"is published for it yet.\nTrain one, once per base model:\n"
             f"    hebb-memory train --model {model_id}\n"
             f"or pass checkpoint='hf:<owner>/<repo>' to use one someone has published.")
     return path
 
 
 def read_state(path: Path, model_id: str, fp: str) -> Tuple[Dict, Dict]:
-    payload = torch.load(path, map_location="cpu", weights_only=False)
+    payload = torch.load(path, map_location="cpu", weights_only=True)
     if "state" not in payload:
         raise CheckpointMismatch(f"{path} is not a memory checkpoint (no 'state' entry)")
     got = payload.get("fingerprint")

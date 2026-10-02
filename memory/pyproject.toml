@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hebb-memory"
-version = "0.1.0"
+version = "0.2.1"
 description = "Memory written into a frozen language model, one page per memory: exact deletion, exact attribution, scoped per subject."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -23,7 +23,7 @@ test = ["pytest>=8.0"]
 
 [project.urls]
 Homepage = "https://hebb-site.pages.dev"
-Source = "https://github.com/NeilGilani/hebb-claude-plugin/tree/main/memory"
+Source = "https://github.com/NeilGilani/hebb-memory"
 
 [project.scripts]
 hebb-memory = "hebb_memory.cli:main"
