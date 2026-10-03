@@ -62,12 +62,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     t.add_argument("--seed", type=int, default=RECIPE["seed"])
     t.add_argument("--ckpt-dir", type=Path, default=None, help="resume here if interrupted")
     for name, text in (("check", "attach and run the self-check"),
-                       ("demo", "write, ask, trace and forget a few memories")):
+                       ("demo", "write, ask, trace and forget a few memories"),
+                       ("bench", "the paper's multi-customer accuracy test")):
         c = sub.add_parser(name, help=text)
         c.add_argument("--model", required=True)
         c.add_argument("--device", default=None)
         c.add_argument("--registry", type=Path, default=None)
         c.add_argument("--checkpoint", default=None, help="a file, or hf:owner/repo")
+        if name == "bench":
+            c.add_argument("--customers", type=int, nargs="+", default=[8, 32])
+            c.add_argument("--seeds", type=int, nargs="+", default=[0])
+            c.add_argument("--facts", type=int, default=3, help="facts per customer")
+            c.add_argument("--out", type=Path, default=None, help="write results as JSON here")
     a = ap.parse_args(argv)
     if a.cmd == "train":
         reg = Registry(a.registry) if a.registry else Registry()
@@ -80,6 +86,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     mem = _attach(a)
     if a.cmd == "demo":
         demo(mem)
+        return 0
+    if a.cmd == "bench":
+        from .bench import bench, table
+        rows = bench(mem, a.customers, a.seeds, a.facts, out=a.out,
+                     log=lambda m: print(m, flush=True))
+        print(table(rows))
         return 0
     rep = selfcheck(mem)
     print(json.dumps({"attach": mem.info, "selfcheck": rep}, indent=1, default=str))

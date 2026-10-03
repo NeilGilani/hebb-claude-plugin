@@ -202,3 +202,14 @@ def test_offline_never_downloads(registry, tmp_path, monkeypatch):
     lm, tok = toy_model(pretrain_steps=20)
     with pytest.raises(hebb.NoCheckpoint):
         hebb.attach(lm, tok, model_id="toy", registry=hebb.Registry(tmp_path / "cache"))
+
+
+def test_bench_scores_every_question_and_leaves_the_memory_empty(registry):
+    from hebb_memory.bench import run, table
+    mem = fresh(registry)
+    r = run(mem, customers=4, facts=2, seed=0, log=lambda m: None)
+    assert r["questions"] == 8 and len(r["per_question"]) == 8
+    assert abs(r["correct"] + r["leaked"] + r["other"] - 1.0) < 1e-6
+    assert 0.0 < r["chance"] < 1.0 and 0.0 <= r["model_alone"] <= 1.0
+    assert len(mem) == 0 and not bool(mem.model.allocated.any())
+    assert "with Hebb" in table([r])
